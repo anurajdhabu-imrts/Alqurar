@@ -1,0 +1,22 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(npm install *)",
+      "Bash(npx tsc *)",
+      "Bash(npx eslint *)",
+      "Bash(Remove-Item \"d:/Rajvardhan/IMR_Projects/Trust OS/Codebase/apps/web/tailwind.config.cjs\")",
+      "Bash(python -c \"from app.main import app; print\\('OK'\\)\")",
+      "Bash(venv/Scripts/python -c \"from app.main import app; print\\('OK'\\)\")",
+      "Bash(venv/Scripts/python -c ' *)",
+      "Bash(python -m alembic upgrade head)",
+      "Bash(alembic upgrade *)",
+      "Bash(Test-Path \"d:\\\\Rajvardhan\\\\IMR_Projects\\\\Trust OS\\\\Codebase\\\\README.md\")",
+      "PowerShell(cd \"d:\\\\Rajvardhan\\\\IMR_Projects\\\\Trust OS\\\\Codebase\\\\apps\\\\backend\"; & \"$env:USERPROFILE\\\\AppData\\\\Roaming\\\\Python\\\\Python313\\\\Scripts\\\\uv.exe\" sync --python 3.12 2>&1 | Select-Object -Last 20)",
+      "Bash(cd /d/Projects/alqurar-ai/apps/backend && find app -type f -name \"*.py\" | sort && echo \"---INIT FILES---\" && find app -name \"__init__.py\" | sort && echo \"---CORE DIR---\" && ls -la app/core)",
+      "Read(//d/d/Projects/alqurar-ai/apps/backend/**)",
+      "Read(//d/d/Projects/alqurar-ai/apps/web/src/**)",
+      "Bash([ -f \"$f\" ])",
+      "Read(//c/Users/IMR522/.claude/projects/d--Projects-alqurar-ai/memory/**)"
+    ]
+  }
+}
