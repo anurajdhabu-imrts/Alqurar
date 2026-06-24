@@ -2,7 +2,7 @@ import { useState } from "react";
 import { Building2, Loader2, X } from "lucide-react";
 import { apiErrorMessage } from "@/api/client";
 import { useUpdateUser } from "@/hooks/useUsers";
-import { clientProfileStore, type ClientProfile } from "@/store/clientProfiles";
+import { useUpsertClientProfile, type ClientProfile } from "@/store/clientProfiles";
 import type { ManagedUser } from "@/types";
 
 const ROLES_ON_PROJECT = ["Contractor", "Subcontractor", "Consultant", "Employer"];
@@ -22,6 +22,7 @@ export function EditClientModal({
   onClose: () => void;
 }) {
   const updateUser = useUpdateUser();
+  const upsertProfile = useUpsertClientProfile();
 
   const [contactName, setContactName] = useState(profile?.contactName ?? user.name);
   const [company, setCompany] = useState(profile?.company ?? "");
@@ -39,7 +40,7 @@ export function EditClientModal({
       if (contactName.trim() !== user.name) {
         await updateUser.mutateAsync({ id: user.id, patch: { name: contactName.trim() } });
       }
-      clientProfileStore.add({
+      await upsertProfile.mutateAsync({
         userId: user.id,
         company: company.trim(),
         crNo: crNo.trim() || undefined,

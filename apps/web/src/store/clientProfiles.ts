@@ -1,12 +1,15 @@
-// ── Client company profiles (admin-registered clients) ─────────────────────
-// The login account for a client is created via the backend users API, but the
-// backend User model only holds name/email/role/status/phone. The extra company
-// details captured at registration (company name, CR no., country, role on
-// project, assigned project) live here, keyed by the created user id.
-//
-// Persisted to localStorage and exposed to React via useSyncExternalStore — the
-// same lightweight store pattern used by mock/clientData's claimDocStore.
-import { useSyncExternalStore } from "react";
+// ── Client company profiles ────────────────────────────────────────────────
+// Company details captured at client registration (company name, CR no.,
+// country, role, contact, assigned project), keyed by the client's user id.
+// Stored on the BACKEND (client_profiles table) so they persist across restarts
+// and devices. The login account itself lives in the users table.
+import { useMemo } from "react";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import {
+  deleteClientProfileApi,
+  listClientProfilesApi,
+  upsertClientProfileApi,
+} from "@/api/clientProfiles";
 
 export interface ClientProfile {
   /** Id of the backing Client-role user account. */
@@ -19,64 +22,36 @@ export interface ClientProfile {
   contactName: string;
   email: string;
   phone?: string;
-  /** Project the client was assigned to at registration (optional). */
+  /** Project the client is assigned to (optional). */
   projectId?: string;
   /** ISO datetime. */
-  createdAt: string;
+  createdAt?: string;
 }
 
-const KEY = "alqarar.clientProfiles";
+export const clientProfilesKey = ["client-profiles"] as const;
 
-function load(): ClientProfile[] {
-  try {
-    const raw = localStorage.getItem(KEY);
-    return raw ? (JSON.parse(raw) as ClientProfile[]) : [];
-  } catch {
-    return [];
-  }
+export function useClientProfilesQuery() {
+  return useQuery({ queryKey: clientProfilesKey, queryFn: listClientProfilesApi, staleTime: 30_000 });
 }
 
-let profiles: ClientProfile[] = load();
-const listeners = new Set<() => void>();
-
-function emit() {
-  try {
-    localStorage.setItem(KEY, JSON.stringify(profiles));
-  } catch {
-    /* ignore storage quota / private-mode errors */
-  }
-  listeners.forEach((l) => l());
-}
-
-export const clientProfileStore = {
-  subscribe(cb: () => void) {
-    listeners.add(cb);
-    return () => {
-      listeners.delete(cb);
-    };
-  },
-  snapshot(): ClientProfile[] {
-    return profiles;
-  },
-  /** Upsert by userId (newest first). */
-  add(p: ClientProfile) {
-    profiles = [p, ...profiles.filter((x) => x.userId !== p.userId)];
-    emit();
-  },
-  remove(userId: string) {
-    profiles = profiles.filter((p) => p.userId !== userId);
-    emit();
-  },
-  get(userId: string): ClientProfile | undefined {
-    return profiles.find((p) => p.userId === userId);
-  },
-};
-
-/** Subscribe to all client company profiles. */
+/** All client company profiles (reactive). */
 export function useClientProfiles(): ClientProfile[] {
-  return useSyncExternalStore(
-    clientProfileStore.subscribe,
-    clientProfileStore.snapshot,
-    clientProfileStore.snapshot,
-  );
+  const { data } = useClientProfilesQuery();
+  return useMemo(() => data ?? [], [data]);
+}
+
+export function useUpsertClientProfile() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (profile: ClientProfile) => upsertClientProfileApi(profile),
+    onSuccess: () => qc.invalidateQueries({ queryKey: clientProfilesKey }),
+  });
+}
+
+export function useDeleteClientProfile() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (userId: string) => deleteClientProfileApi(userId),
+    onSuccess: () => qc.invalidateQueries({ queryKey: clientProfilesKey }),
+  });
 }

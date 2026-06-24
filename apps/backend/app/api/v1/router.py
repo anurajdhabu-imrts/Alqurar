@@ -1,6 +1,6 @@
 from fastapi import APIRouter
 
-from app.api.v1 import auth, users, roles, permissions, documents, assignments, clauses, projects, project_documents
+from app.api.v1 import auth, users, roles, permissions, documents, assignments, clauses, projects, project_documents, client_profiles
 
 api_router = APIRouter()
 
@@ -13,3 +13,4 @@ api_router.include_router(assignments.router, prefix="/assignments", tags=["assi
 api_router.include_router(clauses.router, prefix="/clauses", tags=["clauses"])
 api_router.include_router(projects.router, prefix="/projects", tags=["projects"])
 api_router.include_router(project_documents.router, prefix="/project-documents", tags=["project-documents"])
+api_router.include_router(client_profiles.router, prefix="/client-profiles", tags=["client-profiles"])

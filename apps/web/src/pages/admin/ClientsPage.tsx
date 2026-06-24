@@ -8,7 +8,7 @@ import { ConfirmDialog } from "@/components/ui/ConfirmDialog";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { EditClientModal } from "@/components/clients/EditClientModal";
 import { useDeleteUser, useUsersQuery } from "@/hooks/useUsers";
-import { useClientProfiles, clientProfileStore, type ClientProfile } from "@/store/clientProfiles";
+import { useClientProfiles, useDeleteClientProfile, type ClientProfile } from "@/store/clientProfiles";
 import { useAllProjects } from "@/store/projects";
 import { CLIENT_ROLE } from "@/lib/roles";
 import { formatDate, initials } from "@/lib/utils";
@@ -37,6 +37,7 @@ export function ClientsPage() {
   const profiles = useClientProfiles();
   const allProjects = useAllProjects();
   const deleteUser = useDeleteUser();
+  const deleteProfile = useDeleteClientProfile();
   const [query, setQuery] = useState("");
   const [editTarget, setEditTarget] = useState<ClientRow | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<ClientRow | null>(null);
@@ -200,7 +201,7 @@ export function ClientsPage() {
         onConfirm={() => {
           if (deleteTarget) {
             deleteUser.mutate(deleteTarget.user.id);
-            clientProfileStore.remove(deleteTarget.user.id);
+            deleteProfile.mutate(deleteTarget.user.id);
           }
           setDeleteTarget(null);
         }}
