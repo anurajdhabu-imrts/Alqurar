@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 import { useSearchParams } from "react-router-dom";
 import { Card, CardHeader } from "@/components/ui/Card";
 import { PageHeader } from "@/components/ui/PageHeader";
@@ -6,9 +6,10 @@ import { UploadedDocsList } from "@/components/client/UploadedDocsList";
 import { DocumentsPanel } from "@/components/DocumentsPanel";
 import { GeneratedClaimDocument } from "@/components/client/GeneratedClaimDocument";
 import { useAssignedProjects } from "@/hooks/useAssignments";
+import { useProjectDocuments, useCreateProjectDoc } from "@/hooks/useProjectDocuments";
 import { useHasPermission } from "@/hooks/usePermission";
 import { useAuthStore } from "@/store/authStore";
-import { claimDocStore, docTypeFromName, useClaimDocuments } from "@/mock/clientData";
+import { docTypeFromName } from "@/mock/clientData";
 import type { DocumentAnalysisResult } from "@/api/documents";
 
 /**
@@ -20,26 +21,26 @@ import type { DocumentAnalysisResult } from "@/api/documents";
 export function ClaimDocumentUploadPage() {
   const canUpload = useHasPermission("client.documents.upload");
   const user = useAuthStore((s) => s.user);
-  const allDocs = useClaimDocuments();
   const { projects } = useAssignedProjects();
+  const createDoc = useCreateProjectDoc();
   const [params, setParams] = useSearchParams();
 
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [analyses, setAnalyses] = useState<DocumentAnalysisResult[]>([]);
 
-  // Default the selection to ?project= (if valid) or the first assigned project,
-  // once the (async) assignment list has loaded.
-  useEffect(() => {
-    if (selectedId || projects.length === 0) return;
-    const fromParam = params.get("project");
-    setSelectedId(fromParam && projects.some((p) => p.id === fromParam) ? fromParam : projects[0].id);
-  }, [projects, params, selectedId]);
+  // Default the selection to ?project= (if valid) or the first assigned project —
+  // computed at render (no effect) so it doesn't cause a cascading render.
+  const fromParam = params.get("project");
+  const effectiveId =
+    selectedId ??
+    (projects.length
+      ? fromParam && projects.some((p) => p.id === fromParam)
+        ? fromParam
+        : projects[0].id
+      : null);
 
-  const selected = useMemo(() => projects.find((p) => p.id === selectedId) ?? null, [projects, selectedId]);
-  const selectedDocs = useMemo(
-    () => (selected ? allDocs.filter((d) => d.projectId === selected.id) : []),
-    [allDocs, selected],
-  );
+  const selected = useMemo(() => projects.find((p) => p.id === effectiveId) ?? null, [projects, effectiveId]);
+  const { data: selectedDocs = [] } = useProjectDocuments(selected?.id ?? "");
 
   function changeProject(id: string) {
     setSelectedId(id);
@@ -51,10 +52,11 @@ export function ClaimDocumentUploadPage() {
     setAnalyses((prev) => [analysis, ...prev.filter((a) => a.filename !== analysis.filename)]);
   }
 
-  // Persist each upload against the selected project so it only ever shows there.
+  // Persist each upload against the selected project (server-side, so the admin
+  // sees it in the project workspace).
   function handleUploaded(file: File) {
     if (!selected) return;
-    claimDocStore.add({
+    createDoc.mutate({
       id: `doc-${Date.now()}-${Math.round(Math.random() * 1e6)}`,
       projectId: selected.id,
       name: file.name,
@@ -86,7 +88,7 @@ export function ClaimDocumentUploadPage() {
               <select
                 id="project-select"
                 className="input max-w-md"
-                value={selectedId ?? ""}
+                value={effectiveId ?? ""}
                 onChange={(e) => changeProject(e.target.value)}
               >
                 {projects.map((p) => (

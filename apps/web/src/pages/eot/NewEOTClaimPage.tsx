@@ -14,6 +14,7 @@ import type {
 
 const STANDARDS: ContractStandard[] = [
   "FIDIC Red 1999",
+  "FIDIC Red 2017",
   "FIDIC Yellow 2017",
   "FIDIC Silver 2017",
   "NEC4",
@@ -48,6 +49,7 @@ const NOTICE_WINDOW: Record<
   { notice: number; particulars: number; clause: string }
 > = {
   "FIDIC Red 1999": { notice: 28, particulars: 42, clause: "Sub-Clause 20.1 (Contractor's Claims)" },
+  "FIDIC Red 2017": { notice: 28, particulars: 84, clause: "Sub-Clause 20.2.1 (Notice of Claim)" },
   "FIDIC Yellow 2017": { notice: 28, particulars: 84, clause: "Sub-Clause 20.2.1 (Notice of Claim)" },
   "FIDIC Silver 2017": { notice: 28, particulars: 84, clause: "Sub-Clause 20.2.1 (Notice of Claim)" },
   NEC4: { notice: 56, particulars: 0, clause: "Clause 61.3 (Compensation Event notification)" },

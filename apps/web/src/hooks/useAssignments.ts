@@ -6,7 +6,7 @@ import {
   listProjectClientsApi,
   unassignClientApi,
 } from "@/api/assignments";
-import { projects } from "@/mock/clientData";
+import { useAllProjects } from "@/store/projects";
 import type { Project } from "@/types";
 
 export const myProjectsKey = ["assignments", "me", "projects"] as const;
@@ -21,9 +21,10 @@ export function useMyProjectIds() {
 /** Assigned projects resolved to full Project objects for the client portal. */
 export function useAssignedProjects(): { projects: Project[]; isLoading: boolean } {
   const { data: ids, isLoading } = useMyProjectIds();
+  const all = useAllProjects();
   const resolved = useMemo(
-    () => (ids ? projects.filter((p) => ids.includes(p.id)) : []),
-    [ids],
+    () => (ids ? all.filter((p) => ids.includes(p.id)) : []),
+    [ids, all],
   );
   return { projects: resolved, isLoading };
 }

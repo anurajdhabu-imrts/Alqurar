@@ -16,7 +16,9 @@
       "Read(//d/d/Projects/alqurar-ai/apps/backend/**)",
       "Read(//d/d/Projects/alqurar-ai/apps/web/src/**)",
       "Bash([ -f \"$f\" ])",
-      "Read(//c/Users/IMR522/.claude/projects/d--Projects-alqurar-ai/memory/**)"
+      "Read(//c/Users/IMR522/.claude/projects/d--Projects-alqurar-ai/memory/**)",
+      "mcp__claude_ai_Figma__whoami",
+      "mcp__claude_ai_Figma__use_figma"
     ]
   }
 }

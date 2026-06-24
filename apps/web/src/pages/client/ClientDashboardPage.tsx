@@ -1,5 +1,6 @@
 import { useMemo } from "react";
-import { FileText, FolderKanban, Gavel, Mail, UserCircle2 } from "lucide-react";
+import { Link } from "react-router-dom";
+import { FileText, FolderKanban, Gavel, Mail, UploadCloud, UserCircle2 } from "lucide-react";
 import { Card, CardHeader } from "@/components/ui/Card";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { StatCard } from "@/components/ui/StatCard";
@@ -15,7 +16,7 @@ export function ClientDashboardPage() {
   const allDocs = useClaimDocuments();
 
   // Projects back the claim/document data but are no longer surfaced as UI.
-  const { projects } = useAssignedProjects();
+  const { projects, isLoading: projectsLoading } = useAssignedProjects();
   const projectIds = useMemo(() => new Set(projects.map((p) => p.id)), [projects]);
 
   const claims = useMemo(() => projects.flatMap((p) => claimsForProject(p.name)), [projects]);
@@ -67,6 +68,40 @@ export function ClientDashboardPage() {
             </div>
           </div>
         </dl>
+      </Card>
+
+      {/* Your projects */}
+      <Card>
+        <CardHeader title="Your projects" subtitle="Projects Al Qarar has assigned to you" />
+        <div className="divide-y divide-border">
+          {projectsLoading && <p className="px-5 py-6 text-sm text-muted">Loading your projects…</p>}
+          {!projectsLoading && projects.length === 0 && (
+            <p className="px-5 py-6 text-sm text-muted">
+              No projects assigned yet. Your Al Qarar contact will assign your project shortly.
+            </p>
+          )}
+          {projects.map((p) => (
+            <div key={p.id} className="px-5 py-4 flex items-center justify-between gap-4">
+              <div className="flex items-center gap-3 min-w-0">
+                <span className="size-10 rounded-xl bg-linear-to-br from-navy-700 to-navy-900 text-amber-400 grid place-items-center shrink-0">
+                  <FolderKanban className="size-5" />
+                </span>
+                <div className="min-w-0">
+                  <p className="font-semibold text-ink truncate">{p.name}</p>
+                  <p className="text-xs text-muted truncate">
+                    {p.code} · {p.standard}{p.employer ? ` · ${p.employer}` : ""}
+                  </p>
+                </div>
+              </div>
+              <div className="flex items-center gap-3 shrink-0">
+                <Badge tone={p.status === "Active" ? "success" : "info"}>{p.status}</Badge>
+                <Link to={`/client/upload?project=${p.id}`} className="btn btn-outline btn-sm">
+                  <UploadCloud className="size-3.5" /> Upload
+                </Link>
+              </div>
+            </div>
+          ))}
+        </div>
       </Card>
 
       {/* Summary stats */}

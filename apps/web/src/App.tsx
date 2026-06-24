@@ -22,6 +22,11 @@ import { DisputesPage } from "@/pages/disputes/DisputesPage";
 import { SettingsPage } from "@/pages/settings/SettingsPage";
 import { UsersPage } from "@/pages/admin/UsersPage";
 import { CreateUserPage } from "@/pages/admin/CreateUserPage";
+import { ClientsPage } from "@/pages/admin/ClientsPage";
+import { RegisterClientPage } from "@/pages/admin/RegisterClientPage";
+import { ProjectsPage } from "@/pages/projects/ProjectsPage";
+import { CreateProjectPage } from "@/pages/projects/CreateProjectPage";
+import { ProjectWorkspacePage } from "@/pages/projects/ProjectWorkspacePage";
 import { RolesPage } from "@/pages/admin/RolesPage";
 import { CreateRolePage } from "@/pages/admin/CreateRolePage";
 import { useAuthStore } from "@/store/authStore";
@@ -59,6 +64,10 @@ export default function App() {
             <Route element={<InternalRoute />}>
             <Route element={<AppLayout />}>
               <Route path="/" element={<DashboardPage />} />
+              <Route path="/projects" element={<ProjectsPage />} />
+              <Route path="/projects/new" element={<CreateProjectPage />} />
+              <Route path="/projects/:id/edit" element={<CreateProjectPage />} />
+              <Route path="/projects/:id" element={<ProjectWorkspacePage />} />
               <Route path="/claims" element={<EOTClaimsPage />} />
               <Route path="/claims/new" element={<NewEOTClaimPage />} />
               <Route path="/claims/:ref" element={<EOTClaimDetailPage />} />
@@ -69,6 +78,8 @@ export default function App() {
               <Route path="/variations" element={<VariationsPage />} />
               <Route path="/notices" element={<NoticesPage />} />
               <Route path="/disputes" element={<DisputesPage />} />
+              <Route path="/clients" element={<ClientsPage />} />
+              <Route path="/clients/new" element={<RegisterClientPage />} />
               <Route path="/users" element={<UsersPage />} />
               <Route path="/users/new" element={<CreateUserPage />} />
               <Route path="/users/:id/edit" element={<CreateUserPage />} />

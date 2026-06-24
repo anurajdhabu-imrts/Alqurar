@@ -1,8 +1,8 @@
-import { FileText, Trash2 } from "lucide-react";
+import { FileText, Loader2, Trash2 } from "lucide-react";
 import { Badge } from "@/components/ui/Badge";
 import { formatDate } from "@/lib/utils";
 import { useHasPermission } from "@/hooks/usePermission";
-import { claimDocStore } from "@/mock/clientData";
+import { useDeleteProjectDoc } from "@/hooks/useProjectDocuments";
 import type { UploadedClaimDocument } from "@/types";
 
 function sizeLabel(kb: number): string {
@@ -13,6 +13,7 @@ function sizeLabel(kb: number): string {
 export function UploadedDocsList({ docs }: { docs: UploadedClaimDocument[] }) {
   // Delete is only available if the admin granted the client this permission.
   const canDelete = useHasPermission("client.documents.delete");
+  const del = useDeleteProjectDoc();
 
   if (docs.length === 0) {
     return (
@@ -40,11 +41,12 @@ export function UploadedDocsList({ docs }: { docs: UploadedClaimDocument[] }) {
           {canDelete && (
             <button
               type="button"
-              onClick={() => claimDocStore.remove(d.id)}
+              onClick={() => del.mutate({ id: d.id, projectId: d.projectId })}
+              disabled={del.isPending}
               className="btn btn-ghost px-2 text-error"
               aria-label={`Delete ${d.name}`}
             >
-              <Trash2 className="size-4" />
+              {del.isPending && del.variables?.id === d.id ? <Loader2 className="size-4 animate-spin" /> : <Trash2 className="size-4" />}
             </button>
           )}
         </li>

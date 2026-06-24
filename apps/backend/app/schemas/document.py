@@ -1,6 +1,27 @@
-from typing import List
+from typing import List, Optional
 
 from pydantic import BaseModel
+
+
+class DocumentIn(BaseModel):
+    """A document uploaded against a project. Stored server-side so a file the
+    client uploads is visible to the admin in the project workspace (and vice
+    versa), across browsers/devices."""
+
+    id: str
+    projectId: str
+    name: str
+    type: str = "Other"
+    sizeKB: int = 0
+    uploadedAt: str
+    uploadedBy: str = ""
+    status: str = "Uploaded"
+    claimRef: Optional[str] = None
+    note: Optional[str] = None
+
+
+class DocumentOut(DocumentIn):
+    pass
 
 
 class DocumentAnalysis(BaseModel):

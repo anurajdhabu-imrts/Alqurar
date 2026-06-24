@@ -89,6 +89,7 @@ export type NoticeStatus = "Compliant" | "Due Soon" | "Overdue" | "Missed";
 
 export type ContractStandard =
   | "FIDIC Red 1999"
+  | "FIDIC Red 2017"
   | "FIDIC Yellow 2017"
   | "FIDIC Silver 2017"
   | "NEC4"

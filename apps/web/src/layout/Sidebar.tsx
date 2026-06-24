@@ -2,6 +2,8 @@ import { NavLink } from "react-router-dom";
 import {
   BellRing,
   BookText,
+  Building2,
+  FolderKanban,
   FileText,
   Gavel,
   GitBranch,
@@ -26,7 +28,13 @@ interface NavItem {
 }
 
 const sections: { heading: string; items: NavItem[] }[] = [
-  { heading: "Overview", items: [{ to: "/", label: "Dashboard", icon: LayoutDashboard, end: true }] },
+  {
+    heading: "Overview",
+    items: [
+      { to: "/", label: "Dashboard", icon: LayoutDashboard, end: true },
+      { to: "/projects", label: "Projects", icon: FolderKanban },
+    ],
+  },
   {
     heading: "EOT Claims",
     items: [
@@ -46,6 +54,7 @@ const sections: { heading: string; items: NavItem[] }[] = [
   {
     heading: "Administration",
     items: [
+      { to: "/clients", label: "Clients", icon: Building2, permission: "admin.users" },
       { to: "/users", label: "Users", icon: Users, permission: "admin.users" },
       { to: "/roles", label: "Roles & Permissions", icon: ShieldCheck, permission: "admin.roles" },
     ],
