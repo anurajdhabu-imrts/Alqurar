@@ -13,7 +13,7 @@ import { apiErrorMessage } from "@/api/client";
 import { Card, CardHeader } from "@/components/ui/Card";
 import { useCreateUser, useUsersQuery } from "@/hooks/useUsers";
 import { CLIENT_ROLE } from "@/lib/roles";
-import { clientProfileStore } from "@/store/clientProfiles";
+import { useUpsertClientProfile } from "@/store/clientProfiles";
 import type { ManagedUser } from "@/types";
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
@@ -37,6 +37,7 @@ function generatePassword(): string {
 export function RegisterClientPage() {
   const navigate = useNavigate();
   const createUser = useCreateUser();
+  const upsertProfile = useUpsertClientProfile();
   const { data: users = [] } = useUsersQuery();
 
   // ── Company ──
@@ -114,7 +115,7 @@ export function RegisterClientPage() {
         phone: phone.trim() || undefined,
       });
 
-      clientProfileStore.add({
+      await upsertProfile.mutateAsync({
         userId: user.id,
         company: company.trim(),
         crNo: crNo.trim() || undefined,

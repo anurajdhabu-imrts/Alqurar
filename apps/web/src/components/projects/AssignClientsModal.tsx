@@ -4,7 +4,7 @@ import { AlertTriangle, Building2, CheckCircle2, Loader2, Search, UserPlus, X } 
 import { apiErrorMessage } from "@/api/client";
 import { useUsersQuery } from "@/hooks/useUsers";
 import { useAssignClients, useProjectClients, useUnassignClient } from "@/hooks/useAssignments";
-import { useClientProfiles, clientProfileStore } from "@/store/clientProfiles";
+import { useClientProfiles, useUpsertClientProfile } from "@/store/clientProfiles";
 import { CLIENT_ROLE } from "@/lib/roles";
 import type { ManagedUser, Project } from "@/types";
 
@@ -19,6 +19,7 @@ export function AssignClientsModal({ project, onClose }: { project: Project; onC
   const { data: users, isLoading: usersLoading } = useUsersQuery();
   const { data: assignedIds, isLoading: assignedLoading } = useProjectClients(project.id);
   const profiles = useClientProfiles();
+  const upsertProfile = useUpsertClientProfile();
   const assign = useAssignClients();
   const unassign = useUnassignClient();
 
@@ -83,18 +84,18 @@ export function AssignClientsModal({ project, onClose }: { project: Project; onC
       // Clients page). Match by userId, falling back to email so a profile saved
       // under a previous backend user id still updates.
       const profileFor = (userId: string) => {
-        const direct = clientProfileStore.get(userId);
-        if (direct) return direct;
         const u = clientUsers.find((x) => x.id === userId);
-        return u ? profiles.find((p) => p.email.toLowerCase() === u.email.toLowerCase()) : undefined;
+        return profiles.find(
+          (p) => p.userId === userId || (u != null && p.email.toLowerCase() === u.email.toLowerCase()),
+        );
       };
       for (const id of toAdd) {
         const p = profileFor(id);
-        if (p) clientProfileStore.add({ ...p, projectId: project.id });
+        if (p) await upsertProfile.mutateAsync({ ...p, projectId: project.id });
       }
       for (const id of toRemove) {
         const p = profileFor(id);
-        if (p && p.projectId === project.id) clientProfileStore.add({ ...p, projectId: undefined });
+        if (p && p.projectId === project.id) await upsertProfile.mutateAsync({ ...p, projectId: undefined });
       }
       setDone(true);
       window.setTimeout(onClose, 850);
