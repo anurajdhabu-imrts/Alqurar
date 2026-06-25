@@ -123,6 +123,16 @@ export function AssignClientsModal({ project, onClose }: { project: Project; onC
           <input className="input pl-9" placeholder="Search by company, contact or email…" value={query} onChange={(e) => setQuery(e.target.value)} />
         </div>
 
+        {/* Register a brand-new client (who isn't in the list yet) — goes to the
+            client registration page. The new client can be assigned afterwards. */}
+        <Link
+          to="/clients/new"
+          onClick={onClose}
+          className="btn btn-outline btn-sm w-full mb-3 justify-center border-dashed"
+        >
+          <UserPlus className="size-4" /> Register new client
+        </Link>
+
         <div className="flex-1 overflow-y-auto scroll-thin -mx-1 px-1 min-h-[140px]">
           {loading ? (
             <div className="py-10 text-center text-sm text-muted inline-flex items-center gap-2 justify-center w-full">
@@ -130,16 +140,9 @@ export function AssignClientsModal({ project, onClose }: { project: Project; onC
             </div>
           ) : filtered.length === 0 ? (
             <div className="py-10 text-center text-sm text-muted">
-              {clientUsers.length === 0 ? (
-                <div className="space-y-3">
-                  <p>No registered clients yet.</p>
-                  <Link to="/clients/new" onClick={onClose} className="btn btn-primary btn-sm inline-flex">
-                    <UserPlus className="size-4" /> Register a client
-                  </Link>
-                </div>
-              ) : (
-                "No clients match your search."
-              )}
+              {clientUsers.length === 0
+                ? "No registered clients yet — use “Register new client” above."
+                : "No clients match your search."}
             </div>
           ) : (
             <ul className="space-y-1">
