@@ -110,6 +110,71 @@ export interface DelayEvent {
   evidenceCount: number;
 }
 
+// ── Delay events (Project Workspace → Delay Events tab) ───────────────────
+/** Where an AI-identified delay event sits in the analyst review flow. */
+export type DelayReviewStatus =
+  | "Pending"
+  | "Confirmed"
+  | "Edited"
+  | "Merged"
+  | "Rejected";
+
+/** Quick FIDIC SC 20.2 admissibility read for an event. */
+export type AdmissibilityStatus =
+  | "Likely admissible"
+  | "At risk"
+  | "Inadmissible"
+  | "Not assessed";
+
+/** A source document the AI linked to a delay event. */
+export interface DelayEventSource {
+  id: string;
+  name: string;
+  type: DocType;
+  /** Letter / transmittal reference, e.g. "CL-0412". */
+  ref?: string;
+  /** ISO date of the document. */
+  date?: string;
+}
+
+/** One step in an event's correspondence chronology. */
+export interface ChronologyItem {
+  id: string;
+  /** ISO date. */
+  date: string;
+  actor: "Contractor" | "Engineer" | "Employer" | "System";
+  title: string;
+  detail?: string;
+  /** Links back to a DelayEventSource.id. */
+  sourceId?: string;
+}
+
+/** A richer, reviewable delay event extracted from the data room. */
+export interface ProjectDelayEvent {
+  id: string;
+  /** Human reference, e.g. "DE-03". */
+  ref: string;
+  title: string;
+  /** Short category label, e.g. "Bus duct delay". */
+  category: string;
+  narrative: string;
+  cause: DelayCause;
+  /** FIDIC clause the event falls under, e.g. "Sub-Clause 8.5". */
+  clause: string;
+  /** ISO date. */
+  startDate: string;
+  /** ISO date. */
+  endDate: string;
+  daysImpact: number;
+  criticalPath: boolean;
+  admissibility: AdmissibilityStatus;
+  /** 0–100 AI confidence in the extraction. */
+  aiConfidence: number;
+  reviewStatus: DelayReviewStatus;
+  chronology: ChronologyItem[];
+  sources: DelayEventSource[];
+}
+
 export interface EOTClaim {
   id: string;
   ref: string;

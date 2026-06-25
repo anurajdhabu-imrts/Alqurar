@@ -18,6 +18,7 @@ import { Badge, type Tone } from "@/components/ui/Badge";
 import { Card, CardHeader } from "@/components/ui/Card";
 import { Tabs } from "@/components/ui/Tabs";
 import { DocumentsPanel } from "@/components/DocumentsPanel";
+import { DelayEventsTab } from "@/components/projects/DelayEventsTab";
 import { UploadedDocsList } from "@/components/client/UploadedDocsList";
 import { AssignClientsModal } from "@/components/projects/AssignClientsModal";
 import { useProjectClients } from "@/hooks/useAssignments";
@@ -246,13 +247,7 @@ export function ProjectWorkspacePage() {
         )}
 
         {/* ── Pipeline tabs (next to build) ── */}
-        {tab === "events" && (
-          <ComingSoon
-            icon={ListChecks}
-            title="Delay Events"
-            desc="AI-identified delay events from the uploaded documents — each with its chronology, FIDIC clause, cause (Employer / Contractor / Concurrent) and admissibility."
-          />
-        )}
+        {tab === "events" && <DelayEventsTab />}
         {tab === "windows" && (
           <ComingSoon
             icon={GanttChartSquare}
