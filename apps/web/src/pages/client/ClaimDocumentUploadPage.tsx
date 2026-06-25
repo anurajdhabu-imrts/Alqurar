@@ -9,7 +9,6 @@ import { useAssignedProjects } from "@/hooks/useAssignments";
 import { useProjectDocuments, useCreateProjectDoc } from "@/hooks/useProjectDocuments";
 import { useHasPermission } from "@/hooks/usePermission";
 import { useAuthStore } from "@/store/authStore";
-import { docTypeFromName } from "@/mock/clientData";
 import type { DocumentAnalysisResult } from "@/api/documents";
 
 /**
@@ -52,20 +51,11 @@ export function ClaimDocumentUploadPage() {
     setAnalyses((prev) => [analysis, ...prev.filter((a) => a.filename !== analysis.filename)]);
   }
 
-  // Persist each upload against the selected project (server-side, so the admin
-  // sees it in the project workspace).
+  // Upload each file against the selected project (stored in Google Drive via the
+  // backend), so the admin sees it in the project workspace.
   function handleUploaded(file: File) {
     if (!selected) return;
-    createDoc.mutate({
-      id: `doc-${Date.now()}-${Math.round(Math.random() * 1e6)}`,
-      projectId: selected.id,
-      name: file.name,
-      type: docTypeFromName(file.name),
-      sizeKB: Math.max(1, Math.round(file.size / 1024)),
-      uploadedAt: new Date().toISOString(),
-      uploadedBy: user?.name ?? "Client",
-      status: "Uploaded",
-    });
+    createDoc.mutate({ file, projectId: selected.id, uploadedBy: user?.name ?? "Client" });
   }
 
   return (

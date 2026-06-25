@@ -17,7 +17,7 @@ import {
   X,
 } from "lucide-react";
 import { Badge, type Tone } from "@/components/ui/Badge";
-import { Card, CardHeader } from "@/components/ui/Card";
+import { Card } from "@/components/ui/Card";
 import { mockDelayEvents } from "@/mock/delayEvents";
 import { cn, formatDate } from "@/lib/utils";
 import type {

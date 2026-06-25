@@ -5,7 +5,7 @@ camelCase), so the API responses are unchanged.
 """
 from typing import Optional
 
-from sqlalchemy import Float, Integer, String
+from sqlalchemy import Float, Integer, LargeBinary, String
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.db import Base
@@ -130,8 +130,13 @@ class Document(Base):
     status: Mapped[str] = mapped_column(String, default="Uploaded")
     claimRef: Mapped[Optional[str]] = mapped_column(String, nullable=True)
     note: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+    driveFileId: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+    # The actual file bytes are stored in the database so uploads persist and can
+    # be downloaded again (no external storage needed).
+    data: Mapped[Optional[bytes]] = mapped_column(LargeBinary, nullable=True)
+    mime: Mapped[Optional[str]] = mapped_column(String, nullable=True)
 
-    _FIELDS = ("id", "projectId", "name", "type", "sizeKB", "uploadedAt", "uploadedBy", "status", "claimRef", "note")
+    _FIELDS = ("id", "projectId", "name", "type", "sizeKB", "uploadedAt", "uploadedBy", "status", "claimRef", "note", "driveFileId")
 
     def to_dict(self) -> dict:
         return {f: getattr(self, f) for f in self._FIELDS}

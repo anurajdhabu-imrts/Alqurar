@@ -8,7 +8,7 @@ import os
 from pathlib import Path
 
 from dotenv import load_dotenv
-from sqlalchemy import create_engine
+from sqlalchemy import create_engine, text
 from sqlalchemy.orm import DeclarativeBase, sessionmaker
 
 load_dotenv(Path(__file__).resolve().parents[1] / ".env")
@@ -38,3 +38,10 @@ def init_db() -> None:
     from app import models  # noqa: F401 — register models on Base
 
     Base.metadata.create_all(bind=engine)
+
+    # Lightweight column additions for tables that already existed before a new
+    # field was introduced (create_all won't alter existing tables).
+    with engine.begin() as conn:
+        conn.execute(text('ALTER TABLE documents ADD COLUMN IF NOT EXISTS "driveFileId" VARCHAR'))
+        conn.execute(text('ALTER TABLE documents ADD COLUMN IF NOT EXISTS "data" BYTEA'))
+        conn.execute(text('ALTER TABLE documents ADD COLUMN IF NOT EXISTS "mime" VARCHAR'))

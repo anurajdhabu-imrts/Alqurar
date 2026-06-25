@@ -18,6 +18,7 @@ class DocumentIn(BaseModel):
     status: str = "Uploaded"
     claimRef: Optional[str] = None
     note: Optional[str] = None
+    driveFileId: Optional[str] = None
 
 
 class DocumentOut(DocumentIn):

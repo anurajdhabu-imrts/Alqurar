@@ -1,6 +1,10 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { createProjectDocApi, deleteProjectDocApi, listProjectDocsApi } from "@/api/projectDocuments";
-import type { UploadedClaimDocument } from "@/types";
+import {
+  deleteProjectDocApi,
+  listProjectDocsApi,
+  uploadProjectDocApi,
+  type UploadArgs,
+} from "@/api/projectDocuments";
 
 export const projectDocsKey = (projectId: string) => ["project-documents", projectId] as const;
 
@@ -14,10 +18,11 @@ export function useProjectDocuments(projectId: string) {
   });
 }
 
+/** Upload a real file (stored in Google Drive via the backend). */
 export function useCreateProjectDoc() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (doc: UploadedClaimDocument) => createProjectDocApi(doc),
+    mutationFn: (args: UploadArgs) => uploadProjectDocApi(args),
     onSuccess: (doc) => qc.invalidateQueries({ queryKey: projectDocsKey(doc.projectId) }),
   });
 }

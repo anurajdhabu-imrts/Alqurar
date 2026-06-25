@@ -26,7 +26,6 @@ import { useProjectDocuments, useCreateProjectDoc } from "@/hooks/useProjectDocu
 import { useUsersQuery } from "@/hooks/useUsers";
 import { useClientProfiles } from "@/store/clientProfiles";
 import { useAllProjects } from "@/store/projects";
-import { docTypeFromName } from "@/mock/clientData";
 import { useAuthStore } from "@/store/authStore";
 import { formatCurrency, formatDate } from "@/lib/utils";
 import type { Project } from "@/types";
@@ -95,16 +94,7 @@ export function ProjectWorkspacePage() {
   }
 
   function handleUploaded(file: File) {
-    createDoc.mutate({
-      id: `doc-${Date.now()}-${Math.round(Math.random() * 1e6)}`,
-      projectId: id,
-      name: file.name,
-      type: docTypeFromName(file.name),
-      sizeKB: Math.max(1, Math.round(file.size / 1024)),
-      uploadedAt: new Date().toISOString(),
-      uploadedBy: currentUser?.name ?? "Al Qarar",
-      status: "Uploaded",
-    });
+    createDoc.mutate({ file, projectId: id, uploadedBy: currentUser?.name ?? "Al Qarar" });
   }
 
   return (

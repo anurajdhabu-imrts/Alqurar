@@ -1,14 +1,15 @@
 import { NavLink } from "react-router-dom";
 import {
-  BellRing,
-  BookText,
+  // ── Icons for sections hidden for now (uncomment with their nav items) ──
+  // BellRing,
+  // BookText,
+  // FileText,
+  // Gavel,
+  // GitBranch,
+  // ListChecks,
   Building2,
   FolderKanban,
-  FileText,
-  Gavel,
-  GitBranch,
   LayoutDashboard,
-  ListChecks,
   Settings,
   ShieldCheck,
   Users,
@@ -35,22 +36,23 @@ const sections: { heading: string; items: NavItem[] }[] = [
       { to: "/projects", label: "Projects", icon: FolderKanban },
     ],
   },
-  {
-    heading: "EOT Claims",
-    items: [
-      { to: "/claims", label: "Claims Register", icon: Gavel },
-      { to: "/clause-library", label: "Clause Library", icon: BookText },
-    ],
-  },
-  {
-    heading: "Contract Lifecycle",
-    items: [
-      { to: "/contracts", label: "Contracts", icon: FileText },
-      { to: "/obligations", label: "Obligations", icon: ListChecks },
-      { to: "/variations", label: "Variations", icon: GitBranch },
-      { to: "/notices", label: "Notice Timeline", icon: BellRing },
-    ],
-  },
+  // ── Hidden for now (backend pending) — uncomment to restore ──────────────
+  // {
+  //   heading: "EOT Claims",
+  //   items: [
+  //     { to: "/claims", label: "Claims Register", icon: Gavel },
+  //     { to: "/clause-library", label: "Clause Library", icon: BookText },
+  //   ],
+  // },
+  // {
+  //   heading: "Contract Lifecycle",
+  //   items: [
+  //     { to: "/contracts", label: "Contracts", icon: FileText },
+  //     { to: "/obligations", label: "Obligations", icon: ListChecks },
+  //     { to: "/variations", label: "Variations", icon: GitBranch },
+  //     { to: "/notices", label: "Notice Timeline", icon: BellRing },
+  //   ],
+  // },
   {
     heading: "Administration",
     items: [

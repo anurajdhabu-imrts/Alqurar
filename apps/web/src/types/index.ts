@@ -391,6 +391,8 @@ export interface UploadedClaimDocument {
   claimRef?: string;
   note?: string;
   status: "Uploaded" | "Under Review";
+  /** Google Drive file id once the file is stored. */
+  driveFileId?: string;
 }
 
 // ── FIDIC & NEC clause reference library ──────────────────────────────────
