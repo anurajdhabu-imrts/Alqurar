@@ -1,8 +1,9 @@
-import { FileText, Loader2, Trash2 } from "lucide-react";
+import { Download, FileText, Loader2, Trash2 } from "lucide-react";
 import { Badge } from "@/components/ui/Badge";
 import { formatDate } from "@/lib/utils";
 import { useHasPermission } from "@/hooks/usePermission";
 import { useDeleteProjectDoc } from "@/hooks/useProjectDocuments";
+import { downloadProjectDocApi } from "@/api/projectDocuments";
 import type { UploadedClaimDocument } from "@/types";
 
 function sizeLabel(kb: number): string {
@@ -38,6 +39,17 @@ export function UploadedDocsList({ docs }: { docs: UploadedClaimDocument[] }) {
             </p>
           </div>
           <Badge tone={d.status === "Under Review" ? "warning" : "neutral"}>{d.status}</Badge>
+          {d.driveFileId && (
+            <button
+              type="button"
+              onClick={() => downloadProjectDocApi(d.id, d.name)}
+              className="btn btn-ghost px-2"
+              aria-label={`Download ${d.name}`}
+              title="Download"
+            >
+              <Download className="size-4" />
+            </button>
+          )}
           {canDelete && (
             <button
               type="button"
