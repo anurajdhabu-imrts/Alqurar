@@ -1,6 +1,6 @@
 import { useMemo, useState } from "react";
 import { Link } from "react-router-dom";
-import { Building2, Loader2, Pencil, Search, Trash2, UserPlus } from "lucide-react";
+import { Building2, Check, Link2, Loader2, Pencil, Search, Trash2, UserPlus } from "lucide-react";
 import { apiErrorMessage } from "@/api/client";
 import { Badge, type Tone } from "@/components/ui/Badge";
 import { Card } from "@/components/ui/Card";
@@ -41,6 +41,18 @@ export function ClientsPage() {
   const [query, setQuery] = useState("");
   const [editTarget, setEditTarget] = useState<ClientRow | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<ClientRow | null>(null);
+  const [copiedId, setCopiedId] = useState<string | null>(null);
+
+  function copyUploadLink(profile: ClientProfile | undefined) {
+    if (!profile?.portalLink) return;
+    navigator.clipboard?.writeText(profile.portalLink).then(
+      () => {
+        setCopiedId(profile.userId);
+        window.setTimeout(() => setCopiedId((id) => (id === profile.userId ? null : id)), 1500);
+      },
+      () => {},
+    );
+  }
 
   const rows = useMemo<ClientRow[]>(() => {
     const clientUsers = (users as ManagedUser[]).filter((u) => u.role === CLIENT_ROLE);
@@ -163,6 +175,20 @@ export function ClientsPage() {
                   <td className="px-3 py-3 text-muted whitespace-nowrap">{r.createdAt ? formatDate(r.createdAt) : "—"}</td>
                   <td className="px-5 py-3">
                     <div className="flex items-center justify-end gap-1">
+                      {r.profile?.portalLink && (
+                        <button
+                          className="btn btn-ghost px-2 h-8"
+                          onClick={() => copyUploadLink(r.profile)}
+                          title="Copy upload link"
+                          aria-label="Copy upload link"
+                        >
+                          {copiedId === r.user.id ? (
+                            <Check className="size-4 text-success" />
+                          ) : (
+                            <Link2 className="size-4 text-muted" />
+                          )}
+                        </button>
+                      )}
                       <button className="btn btn-ghost px-2 h-8" onClick={() => setEditTarget(r)} title="Edit client" aria-label="Edit client">
                         <Pencil className="size-4 text-muted" />
                       </button>

@@ -1,6 +1,6 @@
 from fastapi import APIRouter
 
-from app.api.v1 import auth, users, roles, permissions, documents, assignments, clauses, projects, project_documents, client_profiles, delay_events
+from app.api.v1 import auth, users, roles, permissions, documents, assignments, clauses, projects, project_documents, client_profiles, delay_events, portal
 
 api_router = APIRouter()
 
@@ -15,3 +15,4 @@ api_router.include_router(projects.router, prefix="/projects", tags=["projects"]
 api_router.include_router(project_documents.router, prefix="/project-documents", tags=["project-documents"])
 api_router.include_router(client_profiles.router, prefix="/client-profiles", tags=["client-profiles"])
 api_router.include_router(delay_events.router, prefix="/delay-events", tags=["delay-events"])
+api_router.include_router(portal.router, prefix="/portal", tags=["portal"])

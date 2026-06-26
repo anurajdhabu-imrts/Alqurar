@@ -16,7 +16,12 @@ class ClientProfileIn(BaseModel):
     phone: Optional[str] = None
     projectId: Optional[str] = None
     createdAt: Optional[str] = None
+    # Secret token for the client's passwordless upload link. Never set by the
+    # client; generated server-side. Returned so the admin can copy/share the link.
+    accessToken: Optional[str] = None
 
 
 class ClientProfileOut(ClientProfileIn):
-    pass
+    # Absolute, ready-to-share upload-portal link, built server-side from
+    # FRONTEND_URL + accessToken so the frontend never constructs URLs.
+    portalLink: Optional[str] = None

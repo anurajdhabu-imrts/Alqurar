@@ -26,6 +26,12 @@ export interface ClientProfile {
   projectId?: string;
   /** ISO datetime. */
   createdAt?: string;
+  /** Secret token for the client's passwordless upload link (/portal/{accessToken}).
+   *  Generated server-side. */
+  accessToken?: string;
+  /** Ready-to-share upload link, built server-side from FRONTEND_URL + token.
+   *  Use this directly — do NOT construct portal URLs on the frontend. */
+  portalLink?: string;
 }
 
 export const clientProfilesKey = ["client-profiles"] as const;

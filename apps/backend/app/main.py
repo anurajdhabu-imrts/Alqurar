@@ -7,6 +7,7 @@ from app.api.v1.router import api_router
 from app.db import init_db
 from app.services.user_service import seed_users
 from app.services.delay_event_service import seed_delay_events
+from app.services.client_profile_service import ensure_tokens
 
 
 @asynccontextmanager
@@ -15,6 +16,7 @@ async def lifespan(_app: FastAPI):
     init_db()
     seed_users()
     seed_delay_events()
+    ensure_tokens()  # give any pre-existing client an upload-link token
     yield
 
 

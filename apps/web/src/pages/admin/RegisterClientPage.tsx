@@ -5,6 +5,7 @@ import {
   Building2,
   CheckCircle2,
   Copy,
+  Link2,
   Loader2,
   RefreshCw,
   UserPlus,
@@ -59,9 +60,10 @@ export function RegisterClientPage() {
   const [errors, setErrors] = useState<{ company?: string; contactName?: string; email?: string }>({});
   const [submitError, setSubmitError] = useState("");
   const [copied, setCopied] = useState(false);
+  const [linkCopied, setLinkCopied] = useState(false);
 
-  // Success state — keeps the temp password visible so the admin can share it.
-  const [created, setCreated] = useState<{ name: string; email: string; password: string } | null>(null);
+  // Success state — keeps the upload link (and temp password) visible to share.
+  const [created, setCreated] = useState<{ name: string; email: string; password: string; link: string } | null>(null);
 
   const pending = createUser.isPending;
 
@@ -115,7 +117,7 @@ export function RegisterClientPage() {
         phone: phone.trim() || undefined,
       });
 
-      await upsertProfile.mutateAsync({
+      const profile = await upsertProfile.mutateAsync({
         userId: user.id,
         company: company.trim(),
         crNo: crNo.trim() || undefined,
@@ -127,7 +129,8 @@ export function RegisterClientPage() {
         createdAt: new Date().toISOString(),
       });
 
-      setCreated({ name: contactName.trim(), email: cleanEmail, password });
+      // The full link is built server-side (from FRONTEND_URL) — use it as-is.
+      setCreated({ name: contactName.trim(), email: cleanEmail, password, link: profile.portalLink ?? "" });
     } catch (err) {
       setSubmitError(apiErrorMessage(err, "Could not register the client — is the backend running?"));
     }
@@ -144,6 +147,17 @@ export function RegisterClientPage() {
     );
   }
 
+  function copyLink() {
+    if (!created?.link) return;
+    navigator.clipboard?.writeText(created.link).then(
+      () => {
+        setLinkCopied(true);
+        window.setTimeout(() => setLinkCopied(false), 1500);
+      },
+      () => {},
+    );
+  }
+
   // ── Success view ──
   if (created) {
     return (
@@ -151,32 +165,59 @@ export function RegisterClientPage() {
         <div className="mb-6">
           <h1 className="text-[26px] leading-tight font-bold text-ink tracking-tight">Client registered</h1>
           <p className="mt-1.5 text-sm text-muted">
-            The login account is active. Share these credentials with the client — they sign in at the
-            login page and are taken to their client portal.
+            Share the upload link below with the client. They open it — no login needed — and upload their
+            documents straight into the project.
           </p>
         </div>
 
         <Card>
           <CardHeader title={created.name} subtitle={company.trim() || undefined} />
-          <div className="p-5 space-y-4">
+          <div className="p-5 space-y-5">
             <div className="flex items-center gap-2 text-sm text-success bg-success-bg rounded-lg px-3 py-2">
-              <CheckCircle2 className="size-4" /> Account created. Assign this client to a project from the Projects page.
+              <CheckCircle2 className="size-4" /> Client created. Assign them to a project from the Projects page so they can upload.
             </div>
-            <div className="grid sm:grid-cols-2 gap-4">
-              <div>
-                <p className="text-xs text-faint uppercase tracking-wide">Login email</p>
-                <p className="text-sm font-medium text-ink mt-0.5">{created.email}</p>
-              </div>
-              <div>
-                <p className="text-xs text-faint uppercase tracking-wide">Temporary password</p>
-                <div className="flex items-center gap-2 mt-0.5">
-                  <code className="text-sm font-mono font-semibold text-ink bg-navy-50 rounded px-2 py-1">{created.password}</code>
-                  <button type="button" className="btn btn-outline px-2 h-8" onClick={copyPassword} title="Copy password">
-                    {copied ? <CheckCircle2 className="size-4 text-success" /> : <Copy className="size-4" />}
+
+            {/* ── Upload link (primary — passwordless access) ── */}
+            <div>
+              <p className="text-xs text-faint uppercase tracking-wide flex items-center gap-1.5">
+                <Link2 className="size-3.5" /> Client upload link
+              </p>
+              {created.link ? (
+                <div className="flex items-center gap-2 mt-1">
+                  <code className="flex-1 min-w-0 truncate text-sm font-mono text-navy-800 bg-navy-50 rounded-lg px-3 py-2">
+                    {created.link}
+                  </code>
+                  <button type="button" className="btn btn-primary px-3 h-9 shrink-0" onClick={copyLink} title="Copy link">
+                    {linkCopied ? <><CheckCircle2 className="size-4" /> Copied</> : <><Copy className="size-4" /> Copy link</>}
                   </button>
                 </div>
-              </div>
+              ) : (
+                <p className="text-sm text-muted mt-1">Link unavailable — reopen the client from the Clients page to copy it.</p>
+              )}
+              <p className="text-xs text-faint mt-1.5">
+                Send this to <span className="font-medium text-muted">{created.email}</span>. Anyone with the link can upload, so share it only with the client.
+              </p>
             </div>
+
+            {/* ── Optional login (kept for clients who prefer to sign in) ── */}
+            <details className="rounded-lg border border-border px-3 py-2">
+              <summary className="text-xs font-medium text-muted cursor-pointer">Optional login credentials</summary>
+              <div className="grid sm:grid-cols-2 gap-4 mt-3">
+                <div>
+                  <p className="text-xs text-faint uppercase tracking-wide">Login email</p>
+                  <p className="text-sm font-medium text-ink mt-0.5">{created.email}</p>
+                </div>
+                <div>
+                  <p className="text-xs text-faint uppercase tracking-wide">Temporary password</p>
+                  <div className="flex items-center gap-2 mt-0.5">
+                    <code className="text-sm font-mono font-semibold text-ink bg-navy-50 rounded px-2 py-1">{created.password}</code>
+                    <button type="button" className="btn btn-outline px-2 h-8" onClick={copyPassword} title="Copy password">
+                      {copied ? <CheckCircle2 className="size-4 text-success" /> : <Copy className="size-4" />}
+                    </button>
+                  </div>
+                </div>
+              </div>
+            </details>
           </div>
         </Card>
 

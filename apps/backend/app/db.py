@@ -45,3 +45,5 @@ def init_db() -> None:
         conn.execute(text('ALTER TABLE documents ADD COLUMN IF NOT EXISTS "driveFileId" VARCHAR'))
         conn.execute(text('ALTER TABLE documents ADD COLUMN IF NOT EXISTS "data" BYTEA'))
         conn.execute(text('ALTER TABLE documents ADD COLUMN IF NOT EXISTS "mime" VARCHAR'))
+        conn.execute(text('ALTER TABLE documents ADD COLUMN IF NOT EXISTS "uploadedById" VARCHAR'))
+        conn.execute(text('ALTER TABLE client_profiles ADD COLUMN IF NOT EXISTS "accessToken" VARCHAR'))
