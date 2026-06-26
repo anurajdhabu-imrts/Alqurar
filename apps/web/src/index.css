@@ -204,6 +204,23 @@ h1, h2, h3, h4 {
   }
 }
 
+/* ── In-page document viewer (Word/Excel converted to HTML) ── */
+.doc-html { color: var(--color-ink); line-height: 1.6; }
+.doc-html h1, .doc-html h2, .doc-html h3 { font-weight: 600; margin: 0.75em 0 0.4em; }
+.doc-html p { margin: 0.5em 0; }
+.doc-html ul, .doc-html ol { margin: 0.5em 0; padding-left: 1.4em; }
+.doc-html a { color: var(--color-navy-700); text-decoration: underline; }
+.doc-html img { max-width: 100%; height: auto; }
+.doc-html .doc-sheet-title { font-size: 13px; font-weight: 600; margin: 1em 0 0.4em; color: var(--color-navy-700); }
+.doc-html table { border-collapse: collapse; width: 100%; margin: 0.5em 0; font-size: 12.5px; }
+.doc-html th, .doc-html td { border: 1px solid var(--color-border-strong); padding: 5px 8px; text-align: left; vertical-align: top; }
+.doc-html th { background: var(--color-navy-50); font-weight: 600; }
+
+/* Commented (anchored) text — highlighted so it stands out in the document. */
+.doc-mark { background: #fde68a; border-radius: 2px; padding: 0 1px; cursor: pointer; color: inherit; }
+.doc-mark:hover { background: #fcd34d; }
+.doc-mark-flash { background: #f59e0b; box-shadow: 0 0 0 3px rgba(245, 158, 11, 0.4); transition: background 0.2s, box-shadow 0.2s; }
+
 /* ── Scrollbars ────────────────────────────────────────── */
 .scroll-thin::-webkit-scrollbar { width: 8px; height: 8px; }
 .scroll-thin::-webkit-scrollbar-track { background: transparent; }

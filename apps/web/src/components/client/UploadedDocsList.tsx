@@ -1,4 +1,5 @@
-import { Download, FileText, Loader2, Trash2 } from "lucide-react";
+import { Link, useLocation } from "react-router-dom";
+import { Download, Eye, FileText, Loader2, Trash2 } from "lucide-react";
 import { Badge } from "@/components/ui/Badge";
 import { formatDate } from "@/lib/utils";
 import { useHasPermission } from "@/hooks/usePermission";
@@ -15,6 +16,8 @@ export function UploadedDocsList({ docs }: { docs: UploadedClaimDocument[] }) {
   // Delete is only available if the admin granted the client this permission.
   const canDelete = useHasPermission("client.documents.delete");
   const del = useDeleteProjectDoc();
+  // Viewer route lives under /client for clients and at the top level for staff.
+  const viewBase = useLocation().pathname.startsWith("/client") ? "/client/documents" : "/documents";
 
   if (docs.length === 0) {
     return (
@@ -39,6 +42,17 @@ export function UploadedDocsList({ docs }: { docs: UploadedClaimDocument[] }) {
             </p>
           </div>
           <Badge tone={d.status === "Under Review" ? "warning" : "neutral"}>{d.status}</Badge>
+          {d.driveFileId && (
+            <Link
+              to={`${viewBase}/${d.id}`}
+              state={{ name: d.name }}
+              className="btn btn-ghost px-2"
+              aria-label={`View ${d.name}`}
+              title="View"
+            >
+              <Eye className="size-4" />
+            </Link>
+          )}
           {d.driveFileId && (
             <button
               type="button"

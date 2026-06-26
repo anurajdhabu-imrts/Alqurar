@@ -4,14 +4,18 @@ from typing import List, Optional
 from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile, status
 from fastapi.responses import StreamingResponse
 
-from app.schemas.document import DocumentIn, DocumentOut
+from app.schemas.document import CommentIn, CommentOut, DocumentIn, DocumentOut
 from app.services.document_service import (
+    add_comment,
     create_document,
+    delete_comment,
     delete_document,
     get_document,
     get_document_file,
     list_by_project,
+    list_comments,
     next_document_id,
+    update_comment,
 )
 # Google Drive storage is on hold — files are stored in the database for now.
 # Keep this import + the commented code below so Drive can be switched back on
@@ -107,6 +111,49 @@ async def download_document(document_id: str, _=Depends(get_current_user)):
         media_type=mime,
         headers={"Content-Disposition": f'attachment; filename="{filename}"'},
     )
+
+
+@router.get("/{document_id}/comments", response_model=List[CommentOut])
+async def document_comments(document_id: str, _=Depends(get_current_user)):
+    """All comments/notes attached to a document."""
+    return list_comments(document_id)
+
+
+@router.post("/{document_id}/comments", response_model=CommentOut, status_code=status.HTTP_201_CREATED)
+async def add_document_comment(document_id: str, body: CommentIn, user=Depends(get_current_user)):
+    """Attach a comment to a document (author taken from the logged-in user)."""
+    text = (body.body or "").strip()
+    if not text:
+        raise HTTPException(status_code=400, detail="Comment cannot be empty.")
+    if not get_document(document_id):
+        raise HTTPException(status_code=404, detail="Document not found")
+    return add_comment(
+        document_id,
+        text,
+        author=user.get("name") or user.get("email") or "",
+        author_id=user.get("id"),
+        anchor_text=body.anchorText,
+        anchor_start=body.anchorStart,
+        anchor_length=body.anchorLength,
+    )
+
+
+@router.put("/comments/{comment_id}", response_model=CommentOut)
+async def edit_document_comment(comment_id: str, body: CommentIn, _=Depends(get_current_user)):
+    text = (body.body or "").strip()
+    if not text:
+        raise HTTPException(status_code=400, detail="Comment cannot be empty.")
+    updated = update_comment(comment_id, text)
+    if not updated:
+        raise HTTPException(status_code=404, detail="Comment not found")
+    return updated
+
+
+@router.delete("/comments/{comment_id}")
+async def remove_document_comment(comment_id: str, _=Depends(get_current_user)):
+    if not delete_comment(comment_id):
+        raise HTTPException(status_code=404, detail="Comment not found")
+    return {"ok": True}
 
 
 @router.post("/", response_model=DocumentOut, status_code=status.HTTP_201_CREATED)

@@ -47,3 +47,6 @@ def init_db() -> None:
         conn.execute(text('ALTER TABLE documents ADD COLUMN IF NOT EXISTS "mime" VARCHAR'))
         conn.execute(text('ALTER TABLE documents ADD COLUMN IF NOT EXISTS "uploadedById" VARCHAR'))
         conn.execute(text('ALTER TABLE client_profiles ADD COLUMN IF NOT EXISTS "accessToken" VARCHAR'))
+        conn.execute(text('ALTER TABLE document_comments ADD COLUMN IF NOT EXISTS "anchorText" TEXT'))
+        conn.execute(text('ALTER TABLE document_comments ADD COLUMN IF NOT EXISTS "anchorStart" INTEGER'))
+        conn.execute(text('ALTER TABLE document_comments ADD COLUMN IF NOT EXISTS "anchorLength" INTEGER'))

@@ -1,5 +1,5 @@
 import { api } from "./client";
-import type { UploadedClaimDocument } from "@/types";
+import type { CommentAnchor, DocumentComment, UploadedClaimDocument } from "@/types";
 
 /** Documents uploaded against a project (server-side, shared admin ↔ client). */
 export async function listProjectDocsApi(projectId: string): Promise<UploadedClaimDocument[]> {
@@ -36,6 +36,46 @@ export async function downloadProjectDocApi(documentId: string, filename: string
   URL.revokeObjectURL(url);
 }
 
+/**
+ * Fetch the raw file bytes (stored server-side) as a Blob, for rendering inline
+ * inside the in-app viewer page.
+ */
+export async function fetchProjectDocBlobApi(documentId: string): Promise<Blob> {
+  const { data } = await api.get(`/project-documents/${documentId}/download`, { responseType: "blob" });
+  return data as Blob;
+}
+
 export async function deleteProjectDocApi(documentId: string): Promise<void> {
   await api.delete(`/project-documents/${documentId}`);
+}
+
+// ── Document comments ──────────────────────────────────────────────────────
+
+/** All comments/notes attached to a document. */
+export async function listDocCommentsApi(documentId: string): Promise<DocumentComment[]> {
+  const { data } = await api.get(`/project-documents/${documentId}/comments`);
+  return data;
+}
+
+/** Attach a new comment to a document (author is the logged-in user, server-side). */
+export async function addDocCommentApi(
+  documentId: string,
+  body: string,
+  anchor?: CommentAnchor | null,
+): Promise<DocumentComment> {
+  const payload = anchor
+    ? { body, anchorText: anchor.text, anchorStart: anchor.start, anchorLength: anchor.length }
+    : { body };
+  const { data } = await api.post(`/project-documents/${documentId}/comments`, payload);
+  return data;
+}
+
+/** Edit an existing comment's text. */
+export async function updateDocCommentApi(commentId: string, body: string): Promise<DocumentComment> {
+  const { data } = await api.put(`/project-documents/comments/${commentId}`, { body });
+  return data;
+}
+
+export async function deleteDocCommentApi(commentId: string): Promise<void> {
+  await api.delete(`/project-documents/comments/${commentId}`);
 }

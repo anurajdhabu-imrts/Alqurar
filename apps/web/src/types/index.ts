@@ -395,6 +395,30 @@ export interface UploadedClaimDocument {
   driveFileId?: string;
 }
 
+/** A text selection a comment refers to (Word/text documents). */
+export interface CommentAnchor {
+  text: string;
+  /** Character offset of the selection within the rendered content. */
+  start: number;
+  length: number;
+}
+
+/** A free-text comment/note attached to an uploaded document. */
+export interface DocumentComment {
+  id: string;
+  documentId: string;
+  projectId: string;
+  body: string;
+  author: string;
+  authorId?: string | null;
+  /** ISO datetime. */
+  createdAt: string;
+  /** Set when the comment is anchored to selected text in the document. */
+  anchorText?: string | null;
+  anchorStart?: number | null;
+  anchorLength?: number | null;
+}
+
 // ── FIDIC & NEC clause reference library ──────────────────────────────────
 export interface ClauseRef {
   id: string;

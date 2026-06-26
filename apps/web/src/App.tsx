@@ -1,4 +1,4 @@
-import { useEffect } from "react";
+import { lazy, Suspense, useEffect } from "react";
 import { BrowserRouter, Navigate, Route, Routes } from "react-router-dom";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { AppLayout } from "@/layout/AppLayout";
@@ -28,6 +28,10 @@ import { RegisterClientPage } from "@/pages/admin/RegisterClientPage";
 import { ProjectsPage } from "@/pages/projects/ProjectsPage";
 import { CreateProjectPage } from "@/pages/projects/CreateProjectPage";
 import { ProjectWorkspacePage } from "@/pages/projects/ProjectWorkspacePage";
+// Lazy — pulls in the heavy Word/Excel renderers (mammoth, xlsx) only on demand.
+const DocumentViewerPage = lazy(() =>
+  import("@/pages/projects/DocumentViewerPage").then((m) => ({ default: m.DocumentViewerPage })),
+);
 import { RolesPage } from "@/pages/admin/RolesPage";
 import { CreateRolePage } from "@/pages/admin/CreateRolePage";
 import { useAuthStore } from "@/store/authStore";
@@ -60,6 +64,14 @@ export default function App() {
               <Route element={<ClientLayout />}>
                 <Route path="/client" element={<ClientDashboardPage />} />
                 <Route path="/client/upload" element={<ClaimDocumentUploadPage />} />
+                <Route
+                  path="/client/documents/:docId"
+                  element={
+                    <Suspense fallback={null}>
+                      <DocumentViewerPage />
+                    </Suspense>
+                  }
+                />
               </Route>
             </Route>
 
@@ -71,6 +83,14 @@ export default function App() {
               <Route path="/projects/new" element={<CreateProjectPage />} />
               <Route path="/projects/:id/edit" element={<CreateProjectPage />} />
               <Route path="/projects/:id" element={<ProjectWorkspacePage />} />
+              <Route
+                path="/documents/:docId"
+                element={
+                  <Suspense fallback={null}>
+                    <DocumentViewerPage />
+                  </Suspense>
+                }
+              />
               <Route path="/claims" element={<EOTClaimsPage />} />
               <Route path="/claims/new" element={<NewEOTClaimPage />} />
               <Route path="/claims/:ref" element={<EOTClaimDetailPage />} />

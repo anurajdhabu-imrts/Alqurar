@@ -2,7 +2,13 @@ import { useState } from "react";
 import { Bell, ChevronDown, LogOut, Menu, Search } from "lucide-react";
 import { useAuthStore } from "@/store/authStore";
 
-export function Topbar({ onMenu }: { onMenu: () => void }) {
+export function Topbar({
+  onMenu,
+  onToggleCollapse,
+}: {
+  onMenu: () => void;
+  onToggleCollapse?: () => void;
+}) {
   const user = useAuthStore((s) => s.user);
   const logout = useAuthStore((s) => s.logout);
   const [menuOpen, setMenuOpen] = useState(false);
@@ -10,6 +16,13 @@ export function Topbar({ onMenu }: { onMenu: () => void }) {
   return (
     <header className="h-16 shrink-0 bg-card/85 backdrop-blur-md border-b border-border flex items-center gap-3 px-4 sm:px-6 sticky top-0 z-30">
       <button className="btn btn-ghost px-2 lg:hidden" onClick={onMenu} aria-label="Open menu">
+        <Menu className="size-5" />
+      </button>
+      <button
+        className="btn btn-ghost px-2 hidden lg:inline-flex"
+        onClick={onToggleCollapse}
+        aria-label="Toggle sidebar"
+      >
         <Menu className="size-5" />
       </button>
 

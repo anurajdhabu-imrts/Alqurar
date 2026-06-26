@@ -66,15 +66,28 @@ const sections: { heading: string; items: NavItem[] }[] = [
 const linkBase =
   "relative group flex items-center gap-3 h-10 px-3 rounded-[10px] text-sm font-medium transition-colors";
 
-function Item({ item, onClose }: { item: NavItem; onClose: () => void }) {
+function Item({
+  item,
+  onClose,
+  collapsed,
+}: {
+  item: NavItem;
+  onClose: () => void;
+  collapsed?: boolean;
+}) {
   const Icon = item.icon;
   return (
     <NavLink
       to={item.to}
       end={item.end}
       onClick={onClose}
+      title={collapsed ? item.label : undefined}
       className={({ isActive }) =>
-        cn(linkBase, isActive ? "bg-navy-50 text-navy-900 font-semibold" : "text-muted hover:bg-navy-50/70 hover:text-navy-900")
+        cn(
+          linkBase,
+          collapsed && "justify-center px-0",
+          isActive ? "bg-navy-50 text-navy-900 font-semibold" : "text-muted hover:bg-navy-50/70 hover:text-navy-900",
+        )
       }
     >
       {({ isActive }) => (
@@ -84,8 +97,8 @@ function Item({ item, onClose }: { item: NavItem; onClose: () => void }) {
             className={cn("size-[18px] shrink-0", isActive ? "text-navy-700" : "text-faint group-hover:text-navy-700")}
             strokeWidth={2}
           />
-          <span className="truncate">{item.label}</span>
-          {item.badge && (
+          {!collapsed && <span className="truncate">{item.label}</span>}
+          {!collapsed && item.badge && (
             <span className="ml-auto text-[10px] font-semibold px-1.5 py-0.5 rounded-md bg-amber-50 text-amber-700">
               {item.badge}
             </span>
@@ -96,11 +109,22 @@ function Item({ item, onClose }: { item: NavItem; onClose: () => void }) {
   );
 }
 
-export function Sidebar({ mobileOpen, onClose }: { mobileOpen: boolean; onClose: () => void }) {
+export function Sidebar({
+  mobileOpen,
+  onClose,
+  collapsed = false,
+}: {
+  mobileOpen: boolean;
+  onClose: () => void;
+  collapsed?: boolean;
+}) {
   const granted = useUserPermissions();
   const visibleSections = sections
     .map((s) => ({ ...s, items: s.items.filter((i) => !i.permission || granted.includes(i.permission)) }))
     .filter((s) => s.items.length > 0);
+
+  // Collapse only applies on desktop; the mobile drawer always shows full width.
+  const desktopCollapsed = collapsed;
 
   return (
     <>
@@ -113,32 +137,42 @@ export function Sidebar({ mobileOpen, onClose }: { mobileOpen: boolean; onClose:
       />
       <aside
         className={cn(
-          "fixed z-50 inset-y-0 left-0 w-64 bg-card border-r border-border flex flex-col transition-transform",
+          "fixed z-50 inset-y-0 left-0 w-64 bg-card border-r border-border flex flex-col transition-[transform,width] duration-200",
           "lg:static lg:translate-x-0",
+          desktopCollapsed && "lg:w-[72px]",
           mobileOpen ? "translate-x-0" : "-translate-x-full lg:translate-x-0",
         )}
       >
         {/* Brand */}
-        <div className="h-16 shrink-0 flex items-center gap-2.5 px-5 border-b border-border">
+        <div
+          className={cn(
+            "h-16 shrink-0 flex items-center gap-2.5 border-b border-border",
+            desktopCollapsed ? "lg:justify-center lg:px-0 px-5" : "px-5",
+          )}
+        >
           <div className="size-9 shrink-0 rounded-xl bg-linear-to-br from-navy-800 to-navy-950 text-amber-400 grid place-items-center font-extrabold font-display shadow-navy">
             AQ
           </div>
-          <div className="leading-tight">
-            <p className="font-bold font-display text-[15px] text-navy-900">Al Qarar</p>
-            <p className="text-[11px] text-faint">Claims Intelligence</p>
-          </div>
+          {!desktopCollapsed && (
+            <div className="leading-tight">
+              <p className="font-bold font-display text-[15px] text-navy-900">Al Qarar</p>
+              <p className="text-[11px] text-faint">Claims Intelligence</p>
+            </div>
+          )}
         </div>
 
         {/* Nav */}
         <nav className="flex-1 overflow-y-auto scroll-thin px-3 py-4 space-y-5">
           {visibleSections.map((section) => (
             <div key={section.heading}>
-              <p className="px-3 mb-1.5 text-[11px] font-semibold uppercase tracking-wider text-faint">
-                {section.heading}
-              </p>
+              {!desktopCollapsed && (
+                <p className="px-3 mb-1.5 text-[11px] font-semibold uppercase tracking-wider text-faint">
+                  {section.heading}
+                </p>
+              )}
               <div className="space-y-0.5">
                 {section.items.map((item) => (
-                  <Item key={item.to} item={item} onClose={onClose} />
+                  <Item key={item.to} item={item} onClose={onClose} collapsed={desktopCollapsed} />
                 ))}
               </div>
             </div>
@@ -146,9 +180,13 @@ export function Sidebar({ mobileOpen, onClose }: { mobileOpen: boolean; onClose:
         </nav>
 
         {/* Footer */}
-        <div className="shrink-0 px-3 py-3 border-t border-border">
-          <Item item={{ to: "/settings", label: "Settings", icon: Settings }} onClose={onClose} />
-          <p className="px-3 pt-2 text-[11px] text-faint">Phase 1 Beta · v0.1</p>
+        <div className="shrink-0 px-3 py-3 border-t border-border space-y-1">
+          <Item
+            item={{ to: "/settings", label: "Settings", icon: Settings }}
+            onClose={onClose}
+            collapsed={desktopCollapsed}
+          />
+          {!desktopCollapsed && <p className="px-3 pt-1 text-[11px] text-faint">Phase 1 Beta · v0.1</p>}
         </div>
       </aside>
     </>

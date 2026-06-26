@@ -148,6 +148,34 @@ class Document(Base):
         return {f: getattr(self, f) for f in self._FIELDS}
 
 
+class DocumentComment(Base):
+    """A free-text comment/note attached to an uploaded document. Multiple
+    comments per document; shown beside the file in the in-app viewer."""
+
+    __tablename__ = "document_comments"
+
+    id: Mapped[str] = mapped_column(String, primary_key=True)
+    documentId: Mapped[str] = mapped_column(String, index=True)
+    projectId: Mapped[str] = mapped_column(String, default="", index=True)
+    body: Mapped[str] = mapped_column(Text, default="")
+    author: Mapped[str] = mapped_column(String, default="")
+    authorId: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+    createdAt: Mapped[str] = mapped_column(String, default="")
+    # Optional text anchor (for Word/text documents): the exact selected text and
+    # its character offset within the rendered content, so it can be highlighted.
+    anchorText: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    anchorStart: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    anchorLength: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+
+    _FIELDS = (
+        "id", "documentId", "projectId", "body", "author", "authorId", "createdAt",
+        "anchorText", "anchorStart", "anchorLength",
+    )
+
+    def to_dict(self) -> dict:
+        return {f: getattr(self, f) for f in self._FIELDS}
+
+
 class DelayEvent(Base):
     """A reviewable delay event for a project (Project Workspace → Delay Events).
 
