@@ -25,6 +25,29 @@ class DocumentOut(DocumentIn):
     pass
 
 
+class CommentIn(BaseModel):
+    """A new comment/note to attach to a document. Optionally anchored to a
+    selected piece of text (Word/text documents)."""
+
+    body: str
+    anchorText: Optional[str] = None
+    anchorStart: Optional[int] = None
+    anchorLength: Optional[int] = None
+
+
+class CommentOut(BaseModel):
+    id: str
+    documentId: str
+    projectId: str
+    body: str
+    author: str
+    authorId: Optional[str] = None
+    createdAt: str
+    anchorText: Optional[str] = None
+    anchorStart: Optional[int] = None
+    anchorLength: Optional[int] = None
+
+
 class DocumentAnalysis(BaseModel):
     """Structured result of analysing a single uploaded document."""
 
