@@ -53,10 +53,13 @@ class ClientProfile(Base):
     phone: Mapped[Optional[str]] = mapped_column(String, nullable=True)
     projectId: Mapped[Optional[str]] = mapped_column(String, nullable=True)
     createdAt: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+    # Secret token for the client's passwordless upload portal link
+    # (/portal/{accessToken}). Unique per client; how they access without a login.
+    accessToken: Mapped[Optional[str]] = mapped_column(String, unique=True, index=True, nullable=True)
 
     _FIELDS = (
         "userId", "company", "crNo", "country", "roleOnProject",
-        "contactName", "email", "phone", "projectId", "createdAt",
+        "contactName", "email", "phone", "projectId", "createdAt", "accessToken",
     )
 
     def to_dict(self) -> dict:
@@ -135,8 +138,11 @@ class Document(Base):
     # be downloaded again (no external storage needed).
     data: Mapped[Optional[bytes]] = mapped_column(LargeBinary, nullable=True)
     mime: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+    # Client user id when uploaded via the client portal — lets a client see only
+    # their own uploads ("client folder"). Null for admin/staff uploads.
+    uploadedById: Mapped[Optional[str]] = mapped_column(String, nullable=True, index=True)
 
-    _FIELDS = ("id", "projectId", "name", "type", "sizeKB", "uploadedAt", "uploadedBy", "status", "claimRef", "note", "driveFileId")
+    _FIELDS = ("id", "projectId", "name", "type", "sizeKB", "uploadedAt", "uploadedBy", "status", "claimRef", "note", "driveFileId", "uploadedById")
 
     def to_dict(self) -> dict:
         return {f: getattr(self, f) for f in self._FIELDS}
@@ -184,3 +190,30 @@ class DelayEvent(Base):
         d["chronology"] = self.chronology or []
         d["sources"] = self.sources or []
         return d
+
+
+class PortalOTP(Base):
+    """The active one-time code for a client portal link (one row per link).
+    The code itself is stored hashed; rows expire and are deleted on use."""
+
+    __tablename__ = "portal_otps"
+
+    portalToken: Mapped[str] = mapped_column(String, primary_key=True)
+    email: Mapped[str] = mapped_column(String, default="")
+    codeHash: Mapped[str] = mapped_column(String, default="")
+    expiresAt: Mapped[str] = mapped_column(String, default="")  # ISO datetime
+    attempts: Mapped[int] = mapped_column(Integer, default=0)
+
+
+class PortalSession(Base):
+    """A verified browser session for a client portal link, created after a
+    successful OTP. The client isn't asked for OTP again until this expires."""
+
+    __tablename__ = "portal_sessions"
+
+    token: Mapped[str] = mapped_column(String, primary_key=True)
+    portalToken: Mapped[str] = mapped_column(String, index=True)
+    userId: Mapped[str] = mapped_column(String, default="")
+    email: Mapped[str] = mapped_column(String, default="")
+    createdAt: Mapped[str] = mapped_column(String, default="")
+    expiresAt: Mapped[str] = mapped_column(String, default="")  # ISO datetime

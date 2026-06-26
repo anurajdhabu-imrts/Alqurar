@@ -8,6 +8,7 @@ import { ClientRoute, InternalRoute } from "@/layout/roleGuards";
 import { ClientDashboardPage } from "@/pages/client/ClientDashboardPage";
 import { ClaimDocumentUploadPage } from "@/pages/client/ClaimDocumentUploadPage";
 import { LoginPage } from "@/pages/auth/LoginPage";
+import { ClientPortalPage } from "@/pages/portal/ClientPortalPage";
 import { DashboardPage } from "@/pages/Dashboard/DashboardPage";
 import { EOTClaimsPage } from "@/pages/eot/EOTClaimsPage";
 import { NewEOTClaimPage } from "@/pages/eot/NewEOTClaimPage";
@@ -50,6 +51,8 @@ export default function App() {
       <BrowserRouter>
         <Routes>
           <Route path="/login" element={<LoginPage />} />
+          {/* Public, passwordless client upload portal (secret link). */}
+          <Route path="/portal/:token" element={<ClientPortalPage />} />
 
           <Route element={<ProtectedRoute />}>
             {/* Client portal — separate layout & sidebar, clients only. */}
