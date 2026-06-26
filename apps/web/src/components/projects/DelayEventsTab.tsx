@@ -10,15 +10,23 @@ import {
   GitMerge,
   HardHat,
   ListChecks,
+  Loader2,
   Pencil,
+  Plus,
   Scale,
   Sparkles,
+  Trash2,
   TrendingUp,
   X,
 } from "lucide-react";
 import { Badge, type Tone } from "@/components/ui/Badge";
 import { Card } from "@/components/ui/Card";
-import { mockDelayEvents } from "@/mock/delayEvents";
+import { DelayEventFormModal } from "@/components/projects/DelayEventFormModal";
+import {
+  useDelayEvents,
+  useDeleteDelayEvent,
+  useSetDelayEventStatus,
+} from "@/hooks/useDelayEvents";
 import { cn, formatDate } from "@/lib/utils";
 import type {
   AdmissibilityStatus,
@@ -60,11 +68,15 @@ const actorMeta: Record<ChronologyItem["actor"], { tone: string; icon: typeof Bu
 
 type Filter = "all" | "pending" | "critical";
 
-export function DelayEventsTab() {
-  // Frontend-only: events live in component state so review actions feel real.
-  const [events, setEvents] = useState<ProjectDelayEvent[]>(mockDelayEvents);
-  const [selectedId, setSelectedId] = useState<string>(mockDelayEvents[0]?.id ?? "");
+export function DelayEventsTab({ projectId }: { projectId: string }) {
+  const { data: events = [], isLoading } = useDelayEvents(projectId);
+  const setStatusM = useSetDelayEventStatus(projectId);
+  const deleteM = useDeleteDelayEvent(projectId);
+
+  const [selectedId, setSelectedId] = useState<string>("");
   const [filter, setFilter] = useState<Filter>("all");
+  const [formOpen, setFormOpen] = useState(false);
+  const [editing, setEditing] = useState<ProjectDelayEvent | null>(null);
 
   const filtered = useMemo(() => {
     if (filter === "pending") return events.filter((e) => e.reviewStatus === "Pending");
@@ -84,11 +96,40 @@ export function DelayEventsTab() {
   }, [events]);
 
   function setStatus(id: string, reviewStatus: DelayReviewStatus) {
-    setEvents((prev) => prev.map((e) => (e.id === id ? { ...e, reviewStatus } : e)));
+    setStatusM.mutate({ id, reviewStatus });
+  }
+
+  function handleEdit(event: ProjectDelayEvent) {
+    setEditing(event);
+    setFormOpen(true);
+  }
+
+  function handleDelete(id: string) {
+    if (!window.confirm("Delete this delay event? This cannot be undone.")) return;
+    deleteM.mutate(id);
+    if (selectedId === id) setSelectedId("");
+  }
+
+  function openAdd() {
+    setEditing(null);
+    setFormOpen(true);
   }
 
   return (
     <div className="space-y-4">
+      {/* ── Header row ── */}
+      <div className="flex items-center justify-between gap-3">
+        <div>
+          <h3 className="text-base font-semibold text-ink">Delay events</h3>
+          <p className="text-xs text-muted mt-0.5">
+            Add, review and confirm delay events for this project — all saved to the database.
+          </p>
+        </div>
+        <button className="btn btn-primary btn-sm" onClick={openAdd}>
+          <Plus className="size-4" /> Add event
+        </button>
+      </div>
+
       {/* ── Summary strip ── */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
         <SummaryStat icon={ListChecks} label="Events identified" value={stats.total} tone="navy" />
@@ -97,68 +138,105 @@ export function DelayEventsTab() {
         <SummaryStat icon={TrendingUp} label="Employer critical days" value={stats.criticalDays} tone="info" />
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-5 gap-4 items-start">
-        {/* ── Event list ── */}
-        <div className="lg:col-span-2 space-y-3">
-          <div className="flex items-center gap-1.5">
-            {([
-              ["all", "All"],
-              ["pending", "Pending"],
-              ["critical", "Critical path"],
-            ] as [Filter, string][]).map(([id, label]) => (
-              <button
-                key={id}
-                onClick={() => setFilter(id)}
-                className={cn(
-                  "px-3 py-1.5 text-xs font-medium rounded-full transition-colors",
-                  filter === id ? "bg-navy-900 text-white" : "bg-navy-50 text-muted hover:text-ink",
-                )}
-              >
-                {label}
-              </button>
-            ))}
-          </div>
-
-          <div className="space-y-2.5">
-            {filtered.length === 0 && (
-              <Card className="p-6 text-center text-sm text-muted">No events match this filter.</Card>
-            )}
-            {filtered.map((e) => {
-              const on = selected?.id === e.id;
-              return (
+      {isLoading ? (
+        <Card className="p-10 text-center text-sm text-muted inline-flex items-center justify-center gap-2 w-full">
+          <Loader2 className="size-4 animate-spin" /> Loading delay events…
+        </Card>
+      ) : events.length === 0 ? (
+        <Card className="p-10 text-center">
+          <span className="size-12 mx-auto rounded-xl bg-navy-50 text-navy-600 grid place-items-center">
+            <ListChecks className="size-6" />
+          </span>
+          <h3 className="mt-3 font-semibold text-ink">No delay events yet</h3>
+          <p className="mt-1 text-sm text-muted max-w-md mx-auto">
+            Add a delay event manually to start building this project's register. Each event is saved
+            and can be reviewed, edited or deleted.
+          </p>
+          <button className="btn btn-primary btn-sm mt-4 inline-flex" onClick={openAdd}>
+            <Plus className="size-4" /> Add event
+          </button>
+        </Card>
+      ) : (
+        <div className="grid grid-cols-1 lg:grid-cols-5 gap-4 items-start">
+          {/* ── Event list ── */}
+          <div className="lg:col-span-2 space-y-3">
+            <div className="flex items-center gap-1.5">
+              {([
+                ["all", "All"],
+                ["pending", "Pending"],
+                ["critical", "Critical path"],
+              ] as [Filter, string][]).map(([id, label]) => (
                 <button
-                  key={e.id}
-                  onClick={() => setSelectedId(e.id)}
+                  key={id}
+                  onClick={() => setFilter(id)}
                   className={cn(
-                    "w-full text-left rounded-xl border p-3.5 transition-colors",
-                    on ? "border-navy-400 bg-navy-50/60 ring-1 ring-navy-200" : "border-border bg-white hover:border-navy-200",
+                    "px-3 py-1.5 text-xs font-medium rounded-full transition-colors",
+                    filter === id ? "bg-navy-900 text-white" : "bg-navy-50 text-muted hover:text-ink",
                   )}
                 >
-                  <div className="flex items-center justify-between gap-2">
-                    <span className="text-xs font-semibold text-faint tabular-nums">{e.ref}</span>
-                    <Badge tone={reviewTone[e.reviewStatus]} dot>{e.reviewStatus}</Badge>
-                  </div>
-                  <p className="mt-1.5 text-sm font-semibold text-ink leading-snug">{e.title}</p>
-                  <div className="mt-2.5 flex flex-wrap items-center gap-1.5">
-                    <Badge tone={causeTone[e.cause]}>{e.cause}</Badge>
-                    {e.criticalPath && <Badge tone="error">Critical path</Badge>}
-                    <span className="text-xs text-muted ml-auto tabular-nums font-medium">{e.daysImpact} days</span>
-                  </div>
+                  {label}
                 </button>
-              );
-            })}
+              ))}
+            </div>
+
+            <div className="space-y-2.5">
+              {filtered.length === 0 && (
+                <Card className="p-6 text-center text-sm text-muted">No events match this filter.</Card>
+              )}
+              {filtered.map((e) => {
+                const on = selected?.id === e.id;
+                return (
+                  <button
+                    key={e.id}
+                    onClick={() => setSelectedId(e.id)}
+                    className={cn(
+                      "w-full text-left rounded-xl border p-3.5 transition-colors",
+                      on ? "border-navy-400 bg-navy-50/60 ring-1 ring-navy-200" : "border-border bg-white hover:border-navy-200",
+                    )}
+                  >
+                    <div className="flex items-center justify-between gap-2">
+                      <span className="text-xs font-semibold text-faint tabular-nums">{e.ref}</span>
+                      <Badge tone={reviewTone[e.reviewStatus]} dot>{e.reviewStatus}</Badge>
+                    </div>
+                    <p className="mt-1.5 text-sm font-semibold text-ink leading-snug">{e.title}</p>
+                    <div className="mt-2.5 flex flex-wrap items-center gap-1.5">
+                      <Badge tone={causeTone[e.cause]}>{e.cause}</Badge>
+                      {e.criticalPath && <Badge tone="error">Critical path</Badge>}
+                      <span className="text-xs text-muted ml-auto tabular-nums font-medium">{e.daysImpact} days</span>
+                    </div>
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+
+          {/* ── Detail panel ── */}
+          <div className="lg:col-span-3">
+            {selected ? (
+              <EventDetail
+                key={selected.id}
+                event={selected}
+                onStatus={setStatus}
+                onEdit={handleEdit}
+                onDelete={handleDelete}
+              />
+            ) : (
+              <Card className="p-10 text-center text-sm text-muted">Select an event to review its detail.</Card>
+            )}
           </div>
         </div>
+      )}
 
-        {/* ── Detail panel ── */}
-        <div className="lg:col-span-3">
-          {selected ? (
-            <EventDetail key={selected.id} event={selected} onStatus={setStatus} />
-          ) : (
-            <Card className="p-10 text-center text-sm text-muted">Select an event to review its detail.</Card>
-          )}
-        </div>
-      </div>
+      {formOpen && (
+        <DelayEventFormModal
+          projectId={projectId}
+          event={editing ?? undefined}
+          onClose={() => {
+            setFormOpen(false);
+            setEditing(null);
+          }}
+        />
+      )}
     </div>
   );
 }
@@ -196,9 +274,13 @@ function SummaryStat({
 function EventDetail({
   event,
   onStatus,
+  onEdit,
+  onDelete,
 }: {
   event: ProjectDelayEvent;
   onStatus: (id: string, status: DelayReviewStatus) => void;
+  onEdit: (event: ProjectDelayEvent) => void;
+  onDelete: (id: string) => void;
 }) {
   return (
     <Card>
@@ -299,17 +381,24 @@ function EventDetail({
           >
             <Check className="size-4" /> Accept event
           </button>
-          <button className="btn btn-outline btn-sm" onClick={() => onStatus(event.id, "Edited")}>
+          <button className="btn btn-outline btn-sm" onClick={() => onEdit(event)}>
             <Pencil className="size-4" /> Edit
           </button>
           <button className="btn btn-outline btn-sm" onClick={() => onStatus(event.id, "Merged")}>
             <GitMerge className="size-4" /> Merge
           </button>
           <button
-            className="btn btn-ghost btn-sm text-error ml-auto"
+            className="btn btn-ghost btn-sm text-error"
             onClick={() => onStatus(event.id, "Rejected")}
           >
             <X className="size-4" /> Reject
+          </button>
+          <button
+            className="btn btn-ghost btn-sm text-error ml-auto"
+            onClick={() => onDelete(event.id)}
+            aria-label="Delete event"
+          >
+            <Trash2 className="size-4" /> Delete
           </button>
         </div>
         {event.admissibility === "At risk" && (

@@ -6,13 +6,15 @@ from fastapi.middleware.cors import CORSMiddleware
 from app.api.v1.router import api_router
 from app.db import init_db
 from app.services.user_service import seed_users
+from app.services.delay_event_service import seed_delay_events
 
 
 @asynccontextmanager
 async def lifespan(_app: FastAPI):
-    # Create tables (if missing) and seed the demo users on startup.
+    # Create tables (if missing) and seed the demo data on startup.
     init_db()
     seed_users()
+    seed_delay_events()
     yield
 
 

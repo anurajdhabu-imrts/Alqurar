@@ -247,7 +247,7 @@ export function ProjectWorkspacePage() {
         )}
 
         {/* ── Pipeline tabs (next to build) ── */}
-        {tab === "events" && <DelayEventsTab />}
+        {tab === "events" && <DelayEventsTab projectId={id} />}
         {tab === "windows" && (
           <ComingSoon
             icon={GanttChartSquare}

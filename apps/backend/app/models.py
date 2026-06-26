@@ -5,7 +5,7 @@ camelCase), so the API responses are unchanged.
 """
 from typing import Optional
 
-from sqlalchemy import Float, Integer, LargeBinary, String
+from sqlalchemy import JSON, Boolean, Float, Integer, LargeBinary, String, Text
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.db import Base
@@ -140,3 +140,47 @@ class Document(Base):
 
     def to_dict(self) -> dict:
         return {f: getattr(self, f) for f in self._FIELDS}
+
+
+class DelayEvent(Base):
+    """A reviewable delay event for a project (Project Workspace → Delay Events).
+
+    Plain data storage — no AI involved. Events are created manually by the
+    analyst (or seeded), reviewed (Accept / Merge / Reject), edited and deleted.
+    `chronology` and `sources` are lists, stored whole as JSON columns so they
+    match the frontend shape exactly.
+    """
+
+    __tablename__ = "delay_events"
+
+    id: Mapped[str] = mapped_column(String, primary_key=True)
+    projectId: Mapped[str] = mapped_column(String, index=True)
+    ref: Mapped[str] = mapped_column(String, default="")
+    title: Mapped[str] = mapped_column(String, default="")
+    category: Mapped[str] = mapped_column(String, default="")
+    narrative: Mapped[str] = mapped_column(Text, default="")
+    cause: Mapped[str] = mapped_column(String, default="Employer")
+    clause: Mapped[str] = mapped_column(String, default="")
+    startDate: Mapped[str] = mapped_column(String, default="")
+    endDate: Mapped[str] = mapped_column(String, default="")
+    daysImpact: Mapped[int] = mapped_column(Integer, default=0)
+    criticalPath: Mapped[bool] = mapped_column(Boolean, default=False)
+    admissibility: Mapped[str] = mapped_column(String, default="Not assessed")
+    aiConfidence: Mapped[int] = mapped_column(Integer, default=0)
+    reviewStatus: Mapped[str] = mapped_column(String, default="Pending")
+    chronology: Mapped[list] = mapped_column(JSON, default=list)
+    sources: Mapped[list] = mapped_column(JSON, default=list)
+    createdAt: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+    updatedAt: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+
+    _FIELDS = (
+        "id", "projectId", "ref", "title", "category", "narrative", "cause", "clause",
+        "startDate", "endDate", "daysImpact", "criticalPath", "admissibility",
+        "aiConfidence", "reviewStatus", "chronology", "sources",
+    )
+
+    def to_dict(self) -> dict:
+        d = {f: getattr(self, f) for f in self._FIELDS}
+        d["chronology"] = self.chronology or []
+        d["sources"] = self.sources or []
+        return d
