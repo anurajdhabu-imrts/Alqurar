@@ -18,21 +18,12 @@ FRONTEND_URL = os.getenv("FRONTEND_URL", "http://localhost:5173").rstrip("/")
 
 DEBUG = os.getenv("DEBUG", "false").lower() in ("1", "true", "yes")
 
-# ── Client portal OTP + session ────────────────────────────────────────────
-# How long a one-time code stays valid, and how long a verified browser session
-# lasts before the client must re-verify.
-OTP_TTL_MINUTES = int(os.getenv("OTP_TTL_MINUTES", "10"))
-PORTAL_SESSION_DAYS = int(os.getenv("PORTAL_SESSION_DAYS", "7"))
-
-# ── SMTP (for sending the OTP email) ───────────────────────────────────────
-# OTP codes are emailed when SMTP_HOST + SMTP_FROM_EMAIL are set. If not, the
-# request fails with a generic error — the code is NEVER exposed to the client.
-SMTP_HOST = os.getenv("SMTP_HOST", "")
-SMTP_PORT = int(os.getenv("SMTP_PORT", "587"))
-SMTP_USER = os.getenv("SMTP_USER", "")
-SMTP_PASSWORD = os.getenv("SMTP_PASSWORD", "")
-SMTP_FROM_EMAIL = os.getenv("SMTP_FROM_EMAIL", "") or SMTP_USER
-SMTP_USE_TLS = os.getenv("SMTP_USE_TLS", "true").lower() in ("1", "true", "yes")
+# ── Client portal OTP + session + SMTP (DISABLED) ───────────────────────────
+# The portal now opens directly via its secret link — no OTP/email verification —
+# so these settings are no longer read. Restore them here (and re-enable the OTP
+# routes in api/v1/portal.py) to bring email verification back:
+#   OTP_TTL_MINUTES, PORTAL_SESSION_DAYS,
+#   SMTP_HOST, SMTP_PORT, SMTP_USER, SMTP_PASSWORD, SMTP_FROM_EMAIL, SMTP_USE_TLS
 
 
 def portal_link(token: str) -> str:

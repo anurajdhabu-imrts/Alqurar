@@ -13,7 +13,9 @@ import { DashboardPage } from "@/pages/Dashboard/DashboardPage";
 import { EOTClaimsPage } from "@/pages/eot/EOTClaimsPage";
 import { NewEOTClaimPage } from "@/pages/eot/NewEOTClaimPage";
 import { EOTClaimDetailPage } from "@/pages/eot/EOTClaimDetailPage";
-import { ClauseLibraryPage } from "@/pages/eot/ClauseLibraryPage";
+// Global Clause Library removed — clauses now live inside each project as a tab
+// (ProjectWorkspacePage → "Clause Library"). Kept here commented for reference.
+// import { ClauseLibraryPage } from "@/pages/eot/ClauseLibraryPage";
 import { ContractsPage } from "@/pages/clm/ContractsPage";
 import { ContractDetailPage } from "@/pages/clm/ContractDetailPage";
 import { ObligationsPage } from "@/pages/clm/ObligationsPage";
@@ -94,7 +96,8 @@ export default function App() {
               <Route path="/claims" element={<EOTClaimsPage />} />
               <Route path="/claims/new" element={<NewEOTClaimPage />} />
               <Route path="/claims/:ref" element={<EOTClaimDetailPage />} />
-              <Route path="/clause-library" element={<ClauseLibraryPage />} />
+              {/* Global Clause Library removed — now a per-project tab. */}
+              {/* <Route path="/clause-library" element={<ClauseLibraryPage />} /> */}
               <Route path="/contracts" element={<ContractsPage />} />
               <Route path="/contracts/:ref" element={<ContractDetailPage />} />
               <Route path="/obligations" element={<ObligationsPage />} />
