@@ -4,6 +4,7 @@ import {
   ArrowLeft,
   Building2,
   FileSignature,
+  FileStack,
   FileText,
   FolderKanban,
   GanttChartSquare,
@@ -19,6 +20,7 @@ import { Card, CardHeader } from "@/components/ui/Card";
 import { Tabs } from "@/components/ui/Tabs";
 import { DocumentsPanel } from "@/components/DocumentsPanel";
 import { DelayEventsTab } from "@/components/projects/DelayEventsTab";
+import { EventsByDocumentTab } from "@/components/projects/EventsByDocumentTab";
 import { UploadedDocsList } from "@/components/client/UploadedDocsList";
 import { AssignClientsModal } from "@/components/projects/AssignClientsModal";
 import { useProjectClients } from "@/hooks/useAssignments";
@@ -131,6 +133,7 @@ export function ProjectWorkspacePage() {
           { id: "overview", label: "Overview", icon: FolderKanban },
           { id: "dataroom", label: "Data Room", icon: Paperclip, count: docs.length },
           { id: "events", label: "Delay Events", icon: ListChecks },
+          { id: "eventsByDoc", label: "Events by Document", icon: FileStack },
           { id: "windows", label: "Windows Analysis", icon: GanttChartSquare },
           { id: "queries", label: "Queries", icon: MessageSquareText },
           { id: "claim", label: "EOT Claim", icon: FileSignature },
@@ -248,6 +251,7 @@ export function ProjectWorkspacePage() {
 
         {/* ── Pipeline tabs (next to build) ── */}
         {tab === "events" && <DelayEventsTab projectId={id} />}
+        {tab === "eventsByDoc" && <EventsByDocumentTab projectId={id} />}
         {tab === "windows" && (
           <ComingSoon
             icon={GanttChartSquare}
