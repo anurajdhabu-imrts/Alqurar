@@ -220,6 +220,41 @@ class DelayEvent(Base):
         return d
 
 
+class ProjectClause(Base):
+    """A clause in a single project's own Clause Library.
+
+    Unlike a global reference list, clauses here belong to ONE project
+    (projectId): each project has its own library, built from that project's
+    uploaded contract. Today rows are added manually; when the Anthropic key is
+    enabled, AI reads the uploaded contract and fills this same table, and later
+    matches delay events to these rows. The columns mirror the former global
+    clause shape plus projectId, so the frontend mapping is unchanged.
+    """
+
+    __tablename__ = "project_clauses"
+
+    id: Mapped[str] = mapped_column(String, primary_key=True)
+    projectId: Mapped[str] = mapped_column(String, index=True)
+    contract_standard: Mapped[str] = mapped_column(String, default="")
+    clause_number: Mapped[str] = mapped_column(String, default="")
+    clause_title: Mapped[str] = mapped_column(String, default="")
+    clause_description: Mapped[str] = mapped_column(Text, default="")
+    tags: Mapped[list] = mapped_column(JSON, default=list)
+    created_by: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+    created_at: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+    updated_at: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+
+    _FIELDS = (
+        "id", "projectId", "contract_standard", "clause_number", "clause_title",
+        "clause_description", "tags", "created_by", "created_at", "updated_at",
+    )
+
+    def to_dict(self) -> dict:
+        d = {f: getattr(self, f) for f in self._FIELDS}
+        d["tags"] = self.tags or []
+        return d
+
+
 class PortalOTP(Base):
     """The active one-time code for a client portal link (one row per link).
     The code itself is stored hashed; rows expire and are deleted on use."""

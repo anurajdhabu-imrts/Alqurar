@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useRef, useState } from "react";
 import { useParams } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
@@ -7,7 +7,6 @@ import {
   Download,
   FileText,
   Loader2,
-  Mail,
   ShieldCheck,
   UploadCloud,
 } from "lucide-react";
@@ -15,9 +14,7 @@ import {
   downloadPortalDocApi,
   getPortalApi,
   listPortalDocsApi,
-  requestOtpApi,
   uploadPortalDocApi,
-  verifyOtpApi,
   type PortalData,
   type PortalProject,
 } from "@/api/portal";
@@ -29,14 +26,12 @@ function sizeLabel(kb: number): string {
 
 /**
  * Client Portal — a PUBLIC page reached via a secret link (/portal/:token).
- * Opening the link is NOT enough: the client must verify a one-time code emailed
- * to their registered address, which mints a verified session. Only then is the
- * upload area shown. The session means they aren't asked for OTP again until it
- * expires / they switch browser / the admin regenerates the link.
+ * The link opens directly: the token securely identifies the client and their
+ * projects, and the upload area is shown immediately — no login, password or
+ * email verification. (An email-OTP gate was removed to simplify the flow.)
  */
 export function ClientPortalPage() {
   const { token = "" } = useParams();
-  const qc = useQueryClient();
 
   const portal = useQuery({
     queryKey: ["portal", token],
@@ -75,124 +70,22 @@ export function ClientPortalPage() {
               Please contact Al Qarar for a new link.
             </p>
           </div>
-        ) : portal.data?.verified ? (
+        ) : portal.data ? (
           <VerifiedPortal token={token} data={portal.data} />
-        ) : (
-          <OtpGate
-            token={token}
-            maskedEmail={portal.data?.email ?? ""}
-            onVerified={() => qc.invalidateQueries({ queryKey: ["portal", token] })}
-          />
-        )}
+        ) : null}
       </main>
     </div>
   );
 }
 
-// ── OTP verification gate ───────────────────────────────────────────────────
-function OtpGate({
-  token,
-  maskedEmail,
-  onVerified,
-}: {
-  token: string;
-  maskedEmail: string;
-  onVerified: () => void;
-}) {
-  const [code, setCode] = useState("");
-  const [info, setInfo] = useState<string>("");
-  const [error, setError] = useState<string>("");
-  const sentOnce = useRef(false);
+// ── OTP verification gate (REMOVED) ─────────────────────────────────────────
+// The portal used to show an OtpGate here that emailed a 6-digit code and minted
+// a verified session before revealing the upload area. The portal now opens
+// directly via its secret link, so the gate was removed. To restore it, bring
+// back requestOtpApi/verifyOtpApi in @/api/portal and re-add the gate component
+// + the not-verified branch in ClientPortalPage above.
 
-  const send = useMutation({
-    mutationFn: () => requestOtpApi(token),
-    onSuccess: (r) => {
-      setError("");
-      setInfo(`We sent a 6-digit code to ${r.email}. It expires in ${r.expiresInMinutes} minutes.`);
-    },
-    onError: (e) => setError(e instanceof Error ? e.message : "OTP could not be sent. Please contact admin."),
-  });
-
-  const verify = useMutation({
-    mutationFn: () => verifyOtpApi(token, code.trim()),
-    onSuccess: () => onVerified(),
-    onError: (e) => setError(e instanceof Error ? e.message : "Verification failed."),
-  });
-
-  // Auto-send the code once when the gate first appears.
-  useEffect(() => {
-    if (!sentOnce.current) {
-      sentOnce.current = true;
-      send.mutate();
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-
-  return (
-    <div className="max-w-md mx-auto">
-      <div className="card p-7">
-        <div className="text-center">
-          <span className="size-12 mx-auto rounded-xl bg-navy-50 text-navy-700 grid place-items-center">
-            <ShieldCheck className="size-6" />
-          </span>
-          <h1 className="mt-3 text-xl font-bold text-ink">Verify it's you</h1>
-          <p className="mt-1 text-sm text-muted">
-            For your security, enter the code we email to{" "}
-            <span className="font-medium text-ink">{maskedEmail || "your registered email"}</span>.
-          </p>
-        </div>
-
-        {info && (
-          <p className="mt-4 text-sm text-success bg-success-bg rounded-md px-3 py-2 inline-flex items-center gap-2 w-full">
-            <Mail className="size-4 shrink-0" /> {info}
-          </p>
-        )}
-
-        <form
-          className="mt-5 space-y-3"
-          onSubmit={(e) => {
-            e.preventDefault();
-            setError("");
-            if (code.trim().length === 6) verify.mutate();
-          }}
-        >
-          <input
-            inputMode="numeric"
-            autoComplete="one-time-code"
-            maxLength={6}
-            className="input text-center text-2xl tracking-[0.4em] font-mono"
-            placeholder="000000"
-            value={code}
-            onChange={(e) => setCode(e.target.value.replace(/\D/g, "").slice(0, 6))}
-            autoFocus
-          />
-          {error && (
-            <p className="text-sm text-error bg-error-bg rounded-md px-3 py-2 inline-flex items-center gap-2 w-full">
-              <AlertTriangle className="size-4 shrink-0" /> {error}
-            </p>
-          )}
-          <button type="submit" className="btn btn-primary w-full" disabled={verify.isPending || code.trim().length !== 6}>
-            {verify.isPending ? <><Loader2 className="size-4 animate-spin" /> Verifying…</> : "Verify & continue"}
-          </button>
-        </form>
-
-        <div className="mt-4 text-center text-sm text-muted">
-          Didn't get it?{" "}
-          <button
-            type="button"
-            className="font-medium text-navy-700 hover:underline disabled:opacity-50"
-            onClick={() => send.mutate()}
-            disabled={send.isPending}
-          >
-            {send.isPending ? "Sending…" : "Resend code"}
-          </button>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-// ── Verified upload portal ──────────────────────────────────────────────────
+// ── Upload portal ───────────────────────────────────────────────────────────
 function VerifiedPortal({ token, data }: { token: string; data: PortalData }) {
   const qc = useQueryClient();
   const fileRef = useRef<HTMLInputElement>(null);
@@ -232,7 +125,7 @@ function VerifiedPortal({ token, data }: { token: string; data: PortalData }) {
           Welcome{data.client?.name ? `, ${data.client.name}` : ""}
         </h1>
         <p className="mt-1 text-sm text-muted inline-flex items-center gap-1.5">
-          <ShieldCheck className="size-4 text-success" /> Email verified — your session is active.
+          <ShieldCheck className="size-4 text-success" /> Secure upload portal — upload your project documents below.
         </p>
       </div>
 

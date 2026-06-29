@@ -1,7 +1,10 @@
 """Email sending via SMTP. Used to deliver client-portal OTP codes.
 
-If SMTP isn't configured yet, `is_configured()` returns False and the caller
-falls back to logging the code (dev) — so the OTP flow is testable without email.
+ON HOLD / UNUSED: the client portal now opens directly via its secret link, so
+OTP emails are no longer sent and nothing imports this module. Kept for future
+restore — see api/v1/portal.py (the commented OTP block) and config.py. The SMTP
+config it references was removed from config.py, so this module must not be
+imported until that config is restored.
 """
 import smtplib
 from email.message import EmailMessage

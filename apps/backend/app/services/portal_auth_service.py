@@ -1,5 +1,11 @@
 """Client portal OTP + verified-session logic.
 
+ON HOLD / UNUSED: the client portal now opens directly via its secret link, so
+OTP/session verification is disabled and nothing imports this module. Kept for
+future restore — see api/v1/portal.py (the commented OTP block) and config.py.
+It references OTP/session config that was removed from config.py, so this module
+must not be imported until that config is restored.
+
 - An OTP is a 6-digit code, stored hashed, valid for OTP_TTL_MINUTES.
 - On a correct OTP a PortalSession is created (random token, PORTAL_SESSION_DAYS),
   so the client isn't asked again until it expires / the link is regenerated /

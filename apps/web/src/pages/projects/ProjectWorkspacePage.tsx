@@ -2,18 +2,20 @@ import { useMemo, useState, type ReactNode } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import {
   ArrowLeft,
+  BookText,
   Building2,
-  FileSignature,
   FileStack,
-  FileText,
   FolderKanban,
-  GanttChartSquare,
   ListChecks,
-  MessageSquareText,
   Paperclip,
   Pencil,
   UserPlus,
   Users,
+  // ── Hidden for now — uncomment with their tabs (Windows / Queries / EOT Claim) ──
+  // FileSignature,
+  // FileText,
+  // GanttChartSquare,
+  // MessageSquareText,
 } from "lucide-react";
 import { Badge, type Tone } from "@/components/ui/Badge";
 import { Card, CardHeader } from "@/components/ui/Card";
@@ -21,6 +23,7 @@ import { Tabs } from "@/components/ui/Tabs";
 import { DocumentsPanel } from "@/components/DocumentsPanel";
 import { DelayEventsTab } from "@/components/projects/DelayEventsTab";
 import { EventsByDocumentTab } from "@/components/projects/EventsByDocumentTab";
+import { ClauseLibraryTab } from "@/components/projects/ClauseLibraryTab";
 import { UploadedDocsList } from "@/components/client/UploadedDocsList";
 import { AssignClientsModal } from "@/components/projects/AssignClientsModal";
 import { useProjectClients } from "@/hooks/useAssignments";
@@ -47,19 +50,20 @@ function Field({ label, value }: { label: string; value: ReactNode }) {
   );
 }
 
-/** Placeholder for the analysis tabs still to be built. */
-function ComingSoon({ icon: Icon, title, desc }: { icon: typeof FileText; title: string; desc: string }) {
-  return (
-    <Card className="p-10 text-center">
-      <span className="size-12 mx-auto rounded-xl bg-navy-50 text-navy-600 grid place-items-center">
-        <Icon className="size-6" />
-      </span>
-      <h3 className="mt-3 font-semibold text-ink">{title}</h3>
-      <p className="mt-1 text-sm text-muted max-w-md mx-auto">{desc}</p>
-      <span className="badge bg-amber-50 text-amber-700 mt-3 inline-flex">Coming next</span>
-    </Card>
-  );
-}
+// ── Placeholder for the analysis tabs still to be built (Windows / Queries /
+//    EOT Claim). Hidden for now — uncomment together with those tabs. ──
+// function ComingSoon({ icon: Icon, title, desc }: { icon: typeof FileText; title: string; desc: string }) {
+//   return (
+//     <Card className="p-10 text-center">
+//       <span className="size-12 mx-auto rounded-xl bg-navy-50 text-navy-600 grid place-items-center">
+//         <Icon className="size-6" />
+//       </span>
+//       <h3 className="mt-3 font-semibold text-ink">{title}</h3>
+//       <p className="mt-1 text-sm text-muted max-w-md mx-auto">{desc}</p>
+//       <span className="badge bg-amber-50 text-amber-700 mt-3 inline-flex">Coming next</span>
+//     </Card>
+//   );
+// }
 
 export function ProjectWorkspacePage() {
   const { id = "" } = useParams();
@@ -134,9 +138,11 @@ export function ProjectWorkspacePage() {
           { id: "dataroom", label: "Data Room", icon: Paperclip, count: docs.length },
           { id: "events", label: "Delay Events", icon: ListChecks },
           { id: "eventsByDoc", label: "Events by Document", icon: FileStack },
-          { id: "windows", label: "Windows Analysis", icon: GanttChartSquare },
-          { id: "queries", label: "Queries", icon: MessageSquareText },
-          { id: "claim", label: "EOT Claim", icon: FileSignature },
+          { id: "clauses", label: "Clause Library", icon: BookText },
+          // ── Hidden for now — uncomment when these modules are built ──
+          // { id: "windows", label: "Windows Analysis", icon: GanttChartSquare },
+          // { id: "queries", label: "Queries", icon: MessageSquareText },
+          // { id: "claim", label: "EOT Claim", icon: FileSignature },
         ]}
       />
 
@@ -252,6 +258,8 @@ export function ProjectWorkspacePage() {
         {/* ── Pipeline tabs (next to build) ── */}
         {tab === "events" && <DelayEventsTab projectId={id} />}
         {tab === "eventsByDoc" && <EventsByDocumentTab projectId={id} />}
+        {tab === "clauses" && <ClauseLibraryTab projectId={id} projectStandard={project.standard} />}
+        {/* ── Hidden for now — uncomment when these modules are built ──
         {tab === "windows" && (
           <ComingSoon
             icon={GanttChartSquare}
@@ -273,6 +281,7 @@ export function ProjectWorkspacePage() {
             desc="The consolidated Extension of Time claim assembled from the events and windows analysis, exportable to Word/PDF."
           />
         )}
+        */}
       </div>
 
       {assignOpen && <AssignClientsModal project={project} onClose={() => setAssignOpen(false)} />}
