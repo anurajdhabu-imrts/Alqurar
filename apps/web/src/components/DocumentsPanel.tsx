@@ -72,6 +72,7 @@ export function DocumentsPanel({
   claimContext,
   onAnalyzed,
   onUploaded,
+  autoAnalyze = true,
 }: {
   seed: ClaimDocument[];
   kind?: "claim" | "contract";
@@ -81,6 +82,12 @@ export function DocumentsPanel({
   onAnalyzed?: (filename: string, analysis: DocumentAnalysisResult) => void;
   /** Called as soon as a file is added (before analysis) — to persist the upload. */
   onUploaded?: (file: File) => void;
+  /**
+   * When false, this panel is just an uploader: it does NOT run its own live AI
+   * analysis. Use this where analysis is handled server-side in the background
+   * (the project Data Room) so files aren't analysed twice.
+   */
+  autoAnalyze?: boolean;
 }) {
   const [docs, setDocs] = useState<PanelDoc[]>(seed);
 
@@ -94,7 +101,9 @@ export function DocumentsPanel({
           name: f.name,
           type,
           sizeKB: Math.max(1, Math.round(f.size / 1024)),
-          status: "Parsing", // shown as "Analysing…" while the model runs
+          // When analysis is handled server-side, mark the file done immediately;
+          // otherwise show "Analysing…" while this panel runs the model.
+          status: autoAnalyze ? "Parsing" : "Parsed",
           ocr: type === "Scan",
           uploadedAt: new Date().toISOString().slice(0, 10),
         };
@@ -102,6 +111,8 @@ export function DocumentsPanel({
       });
 
       setDocs((prev) => [...added.map((a) => a.doc), ...prev]);
+
+      if (!autoAnalyze) return; // background analysis handles it elsewhere
 
       // Run real Claude analysis on each uploaded file.
       added.forEach(async ({ doc, file }) => {
@@ -122,7 +133,7 @@ export function DocumentsPanel({
         }
       });
     },
-    [claimContext, onAnalyzed, onUploaded],
+    [autoAnalyze, claimContext, onAnalyzed, onUploaded],
   );
 
   const { getRootProps, getInputProps, isDragActive } = useDropzone({ onDrop });

@@ -135,14 +135,29 @@ class Document(Base):
     note: Mapped[Optional[str]] = mapped_column(String, nullable=True)
     driveFileId: Mapped[Optional[str]] = mapped_column(String, nullable=True)
     # The actual file bytes are stored in the database so uploads persist and can
-    # be downloaded again (no external storage needed).
-    data: Mapped[Optional[bytes]] = mapped_column(LargeBinary, nullable=True)
+    # be downloaded again (no external storage needed). DEFERRED: a file can be
+    # tens of MB, so it is NOT loaded by ordinary list/get queries (e.g. the data
+    # room list that the UI polls). It loads only when the bytes are accessed
+    # (download / text extraction), keeping list queries small and the event loop
+    # responsive.
+    data: Mapped[Optional[bytes]] = mapped_column(LargeBinary, nullable=True, deferred=True)
     mime: Mapped[Optional[str]] = mapped_column(String, nullable=True)
     # Client user id when uploaded via the client portal — lets a client see only
     # their own uploads ("client folder"). Null for admin/staff uploads.
     uploadedById: Mapped[Optional[str]] = mapped_column(String, nullable=True, index=True)
+    # Cached AI analysis of this document (DocumentAnalysis shape) so the data room
+    # shows what each file is about without re-running the model on every view.
+    analysis: Mapped[Optional[dict]] = mapped_column(JSON, nullable=True)
+    # Background-analysis lifecycle: "" (never run), "pending", "analyzing",
+    # "done", "failed". Lets the UI poll instead of blocking on the model call.
+    analysisStatus: Mapped[str] = mapped_column(String, default="")
+    analysisError: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    # Cached extracted text (OCR'd if the file was scanned). Computed once during
+    # analysis and reused by delay-event extraction so files aren't re-read/re-OCR'd.
+    # Deferred + kept out of _FIELDS: never sent to the frontend or loaded by lists.
+    extractedText: Mapped[Optional[str]] = mapped_column(Text, nullable=True, deferred=True)
 
-    _FIELDS = ("id", "projectId", "name", "type", "sizeKB", "uploadedAt", "uploadedBy", "status", "claimRef", "note", "driveFileId", "uploadedById")
+    _FIELDS = ("id", "projectId", "name", "type", "sizeKB", "uploadedAt", "uploadedBy", "status", "claimRef", "note", "driveFileId", "uploadedById", "analysis", "analysisStatus", "analysisError")
 
     def to_dict(self) -> dict:
         return {f: getattr(self, f) for f in self._FIELDS}

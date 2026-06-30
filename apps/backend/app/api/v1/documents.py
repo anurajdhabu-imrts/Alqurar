@@ -5,7 +5,7 @@ from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
 
 from app.api.v1.deps import get_current_user
 from app.schemas.document import DocumentAnalysisOut
-from app.services.ai_service import MODEL, analyze_document
+from app.services.ai_service import ANALYSIS_MODEL, analyze_document
 from app.services.document_extract import extract_text
 
 _NOT_CONFIGURED = (
@@ -63,5 +63,5 @@ async def analyze_uploaded_document(
         filename=filename,
         extracted_chars=len(text),
         truncated=truncated,
-        model=MODEL,
+        model=ANALYSIS_MODEL,
     )

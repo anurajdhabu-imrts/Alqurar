@@ -1,6 +1,7 @@
+import os
 from typing import List
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, status
 
 from app.schemas.delay_event import (
     DelayEventIn,
@@ -15,9 +16,43 @@ from app.services.delay_event_service import (
     set_status,
     update_event,
 )
+from app.services import project_service, delay_event_extraction
 from app.api.v1.deps import get_current_user
 
 router = APIRouter()
+
+_NOT_CONFIGURED = (
+    "AI analysis is not configured — set ANTHROPIC_API_KEY in apps/backend/.env "
+    "and restart the backend."
+)
+
+
+@router.post("/extract/{project_id}")
+async def extract_events_for_project(
+    project_id: str, background: BackgroundTasks, current_user=Depends(get_current_user),
+):
+    """Queue AI extraction of the project's delay-event register (background) and
+    return immediately. The client polls `/extract/{project_id}/status`. When it
+    completes, the project's events are replaced with the extracted set."""
+    if current_user.get("role") == "Client View":
+        raise HTTPException(status_code=403, detail="Clients cannot extract delay events.")
+    if not os.getenv("ANTHROPIC_API_KEY"):
+        raise HTTPException(status_code=503, detail=_NOT_CONFIGURED)
+    if not project_service.get_project(project_id):
+        raise HTTPException(status_code=404, detail="Project not found")
+
+    if delay_event_extraction.get_status(project_id).get("status") == "running":
+        return {"status": "running"}
+
+    delay_event_extraction.mark_running(project_id)
+    background.add_task(delay_event_extraction.run_extraction, project_id)
+    return {"status": "running"}
+
+
+@router.get("/extract/{project_id}/status")
+async def extraction_status(project_id: str, _=Depends(get_current_user)):
+    """Current state of background extraction for a project."""
+    return delay_event_extraction.get_status(project_id)
 
 
 @router.get("/project/{project_id}", response_model=List[DelayEventOut])

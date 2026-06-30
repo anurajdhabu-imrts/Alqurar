@@ -1,7 +1,9 @@
+import asyncio
+import os
 from datetime import datetime, timezone
 from typing import List, Optional
 
-from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile, status
+from fastapi import APIRouter, BackgroundTasks, Depends, File, Form, HTTPException, UploadFile, status
 from fastapi.responses import StreamingResponse
 
 from app.schemas.document import CommentIn, CommentOut, DocumentIn, DocumentOut
@@ -14,9 +16,12 @@ from app.services.document_service import (
     get_document_file,
     list_by_project,
     list_comments,
+    list_pending_ids,
     next_document_id,
+    set_analysis_status,
     update_comment,
 )
+from app.services.document_analysis import run_analysis, run_many
 # Google Drive storage is on hold — files are stored in the database for now.
 # Keep this import + the commented code below so Drive can be switched back on
 # later without rewriting anything.
@@ -45,6 +50,7 @@ async def documents_for_project(project_id: str, _=Depends(get_current_user)):
 
 @router.post("/upload", response_model=DocumentOut, status_code=status.HTTP_201_CREATED)
 async def upload_document(
+    background: BackgroundTasks,
     file: UploadFile = File(...),
     projectId: str = Form(...),
     uploadedBy: str = Form(""),
@@ -52,7 +58,8 @@ async def upload_document(
     note: Optional[str] = Form(None),
     _=Depends(get_current_user),
 ):
-    """Receive the actual file, store its bytes in the database, and save the record."""
+    """Receive the file, store its bytes, and kick off AI analysis in the
+    background so the upload returns immediately even for large files."""
     content = await file.read()
     doc_id = next_document_id()  # short sequential id: doc-1, doc-2, ...
 
@@ -85,7 +92,55 @@ async def upload_document(
         "data": content,
         "mime": file.content_type or "application/octet-stream",
     }
-    return create_document(record)
+    if os.getenv("ANTHROPIC_API_KEY"):
+        record["analysisStatus"] = "pending"
+    # Inserting the file bytes is blocking and the file can be large — keep it off
+    # the event loop so concurrent requests (e.g. login) stay responsive.
+    saved = await asyncio.to_thread(create_document, record)
+
+    # Analyse in the background — the response returns now, not after the model call.
+    if os.getenv("ANTHROPIC_API_KEY"):
+        background.add_task(run_analysis, doc_id)
+    return saved
+
+
+_NOT_CONFIGURED = (
+    "AI analysis is not configured — set ANTHROPIC_API_KEY in apps/backend/.env "
+    "and restart the backend."
+)
+
+
+@router.post("/{document_id}/analyze", response_model=DocumentOut)
+async def analyze_project_document(
+    document_id: str, background: BackgroundTasks, _=Depends(get_current_user),
+):
+    """Queue (re)analysis of a stored document and return immediately. The result
+    is written to the row in the background; the client polls for it."""
+    if not os.getenv("ANTHROPIC_API_KEY"):
+        raise HTTPException(status_code=503, detail=_NOT_CONFIGURED)
+    if not get_document(document_id):
+        raise HTTPException(status_code=404, detail="Document not found")
+
+    updated = set_analysis_status(document_id, "pending")
+    background.add_task(run_analysis, document_id)
+    return updated
+
+
+@router.post("/project/{project_id}/analyze-pending", response_model=List[DocumentOut])
+async def analyze_pending_documents(
+    project_id: str, background: BackgroundTasks, _=Depends(get_current_user),
+):
+    """Queue analysis for every not-yet-analysed document in a project (bulk).
+    Returns the project's documents with the queued ones marked pending."""
+    if not os.getenv("ANTHROPIC_API_KEY"):
+        raise HTTPException(status_code=503, detail=_NOT_CONFIGURED)
+
+    pending = list_pending_ids(project_id)
+    for doc_id in pending:
+        set_analysis_status(doc_id, "pending")
+    if pending:
+        background.add_task(run_many, pending)
+    return list_by_project(project_id)
 
 
 @router.get("/{document_id}/download")

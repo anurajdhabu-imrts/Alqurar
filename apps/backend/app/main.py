@@ -1,3 +1,5 @@
+import asyncio
+import os
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
@@ -6,8 +8,9 @@ from fastapi.middleware.cors import CORSMiddleware
 from app.api.v1.router import api_router
 from app.db import init_db
 from app.services.user_service import seed_users
-from app.services.delay_event_service import seed_delay_events
 from app.services.client_profile_service import ensure_tokens
+from app.services.document_service import list_unfinished_analysis_ids
+from app.services.document_analysis import run_many
 
 
 @asynccontextmanager
@@ -15,8 +18,14 @@ async def lifespan(_app: FastAPI):
     # Create tables (if missing) and seed the demo data on startup.
     init_db()
     seed_users()
-    seed_delay_events()
     ensure_tokens()  # give any pre-existing client an upload-link token
+
+    # Resume any document analyses that a previous run left unfinished, so they
+    # don't sit "pending" forever. Runs in the background (semaphore-bounded).
+    if os.getenv("ANTHROPIC_API_KEY"):
+        pending = list_unfinished_analysis_ids()
+        if pending:
+            asyncio.create_task(run_many(pending))
     yield
 
 
