@@ -22,7 +22,9 @@ class DocumentIn(BaseModel):
 
 
 class DocumentOut(DocumentIn):
-    pass
+    # Cached AI analysis (DocumentAnalysis shape), present once the file has been
+    # analysed in the data room.
+    analysis: Optional[dict] = None
 
 
 class CommentIn(BaseModel):

@@ -34,3 +34,26 @@ export async function setDelayEventStatusApi(
 export async function deleteDelayEventApi(id: string): Promise<void> {
   await api.delete(`/delay-events/${id}`);
 }
+
+/** Background delay-event extraction status for a project. */
+export interface ExtractionStatus {
+  status: "idle" | "running" | "done" | "failed";
+  error?: string;
+  count?: number;
+}
+
+/**
+ * Queue AI extraction of the project's delay-event register. Returns immediately;
+ * poll `getDelayEventExtractionStatusApi` for progress. On completion the project's
+ * events are replaced with the extracted set.
+ */
+export async function startDelayEventExtractionApi(projectId: string): Promise<ExtractionStatus> {
+  const { data } = await api.post(`/delay-events/extract/${projectId}`);
+  return data;
+}
+
+/** Current state of background extraction for a project. */
+export async function getDelayEventExtractionStatusApi(projectId: string): Promise<ExtractionStatus> {
+  const { data } = await api.get(`/delay-events/extract/${projectId}/status`);
+  return data;
+}

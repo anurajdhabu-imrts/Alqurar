@@ -49,6 +49,18 @@ export async function deleteProjectDocApi(documentId: string): Promise<void> {
   await api.delete(`/project-documents/${documentId}`);
 }
 
+/** Queue (re)analysis of a stored document — returns immediately; result is polled. */
+export async function analyzeProjectDocApi(documentId: string): Promise<UploadedClaimDocument> {
+  const { data } = await api.post(`/project-documents/${documentId}/analyze`);
+  return data;
+}
+
+/** Queue analysis for every not-yet-analysed document in a project (bulk). */
+export async function analyzePendingProjectDocsApi(projectId: string): Promise<UploadedClaimDocument[]> {
+  const { data } = await api.post(`/project-documents/project/${projectId}/analyze-pending`);
+  return data;
+}
+
 // ── Document comments ──────────────────────────────────────────────────────
 
 /** All comments/notes attached to a document. */

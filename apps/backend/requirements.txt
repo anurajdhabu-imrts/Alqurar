@@ -8,7 +8,10 @@ psycopg2-binary
 python-dotenv
 anthropic
 pypdf
+pymupdf
 python-docx
+python-pptx
+openpyxl
 # migrations only:
 alembic
 asyncpg

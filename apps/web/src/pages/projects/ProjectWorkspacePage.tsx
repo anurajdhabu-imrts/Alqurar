@@ -7,8 +7,10 @@ import {
   FileStack,
   FolderKanban,
   ListChecks,
+  Loader2,
   Paperclip,
   Pencil,
+  Sparkles,
   UserPlus,
   Users,
   // ── Hidden for now — uncomment with their tabs (Windows / Queries / EOT Claim) ──
@@ -27,7 +29,7 @@ import { ClauseLibraryTab } from "@/components/projects/ClauseLibraryTab";
 import { UploadedDocsList } from "@/components/client/UploadedDocsList";
 import { AssignClientsModal } from "@/components/projects/AssignClientsModal";
 import { useProjectClients } from "@/hooks/useAssignments";
-import { useProjectDocuments, useCreateProjectDoc } from "@/hooks/useProjectDocuments";
+import { useProjectDocuments, useCreateProjectDoc, useAnalyzePendingDocs } from "@/hooks/useProjectDocuments";
 import { useUsersQuery } from "@/hooks/useUsers";
 import { useClientProfiles } from "@/store/clientProfiles";
 import { useAllProjects } from "@/store/projects";
@@ -76,7 +78,9 @@ export function ProjectWorkspacePage() {
   const profiles = useClientProfiles();
   const { data: docs = [] } = useProjectDocuments(id);
   const createDoc = useCreateProjectDoc();
+  const analyzePending = useAnalyzePendingDocs(id);
   const currentUser = useAuthStore((s) => s.user);
+  const unanalysedCount = docs.filter((d) => !d.analysis && d.driveFileId).length;
 
   const [tab, setTab] = useState("overview");
   const [assignOpen, setAssignOpen] = useState(false);
@@ -245,11 +249,27 @@ export function ProjectWorkspacePage() {
                 kind="claim"
                 claimContext={{ standard: project.standard }}
                 onUploaded={handleUploaded}
+                autoAnalyze={false}
               />
             </Card>
 
             <Card>
-              <CardHeader title="Uploaded documents" subtitle={`${docs.length} document(s) — incl. files uploaded by the client`} />
+              <CardHeader
+                title="Uploaded documents"
+                subtitle={`${docs.length} document(s) — incl. files uploaded by the client`}
+                action={
+                  unanalysedCount > 0 ? (
+                    <button
+                      className="btn btn-outline btn-sm"
+                      onClick={() => analyzePending.mutate()}
+                      disabled={analyzePending.isPending}
+                    >
+                      {analyzePending.isPending ? <Loader2 className="size-3.5 animate-spin" /> : <Sparkles className="size-3.5" />}
+                      Analyse {unanalysedCount} pending
+                    </button>
+                  ) : undefined
+                }
+              />
               <UploadedDocsList docs={docs} />
             </Card>
           </div>

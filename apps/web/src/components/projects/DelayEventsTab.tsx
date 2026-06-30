@@ -24,6 +24,7 @@ import { Card } from "@/components/ui/Card";
 import { DelayEventFormModal } from "@/components/projects/DelayEventFormModal";
 import {
   useDelayEvents,
+  useDelayEventsExtractor,
   useDeleteDelayEvent,
   useSetDelayEventStatus,
 } from "@/hooks/useDelayEvents";
@@ -72,11 +73,26 @@ export function DelayEventsTab({ projectId }: { projectId: string }) {
   const { data: events = [], isLoading } = useDelayEvents(projectId);
   const setStatusM = useSetDelayEventStatus(projectId);
   const deleteM = useDeleteDelayEvent(projectId);
+  // Auto-extracts from the data room once documents are analysed (when empty),
+  // and also backs the manual "Extract with AI" button below.
+  const extract = useDelayEventsExtractor(projectId, !isLoading, events.length);
 
   const [selectedId, setSelectedId] = useState<string>("");
   const [filter, setFilter] = useState<Filter>("all");
   const [formOpen, setFormOpen] = useState(false);
   const [editing, setEditing] = useState<ProjectDelayEvent | null>(null);
+
+  function handleExtract() {
+    if (
+      events.length > 0 &&
+      !window.confirm(
+        "Re-extract delay events from the data room with AI? This replaces the current events for this project.",
+      )
+    )
+      return;
+    setSelectedId("");
+    extract.start();
+  }
 
   const filtered = useMemo(() => {
     if (filter === "pending") return events.filter((e) => e.reviewStatus === "Pending");
@@ -122,13 +138,32 @@ export function DelayEventsTab({ projectId }: { projectId: string }) {
         <div>
           <h3 className="text-base font-semibold text-ink">Delay events</h3>
           <p className="text-xs text-muted mt-0.5">
-            Add, review and confirm delay events for this project — all saved to the database.
+            Extract events from the data room with AI, or add them manually — all saved to the database.
           </p>
         </div>
-        <button className="btn btn-primary btn-sm" onClick={openAdd}>
-          <Plus className="size-4" /> Add event
-        </button>
+        <div className="flex items-center gap-2">
+          <button className="btn btn-primary btn-sm" onClick={handleExtract} disabled={extract.isRunning}>
+            {extract.isRunning ? <Loader2 className="size-4 animate-spin" /> : <Sparkles className="size-4" />}
+            {extract.isRunning ? "Extracting…" : "Extract with AI"}
+          </button>
+          <button className="btn btn-outline btn-sm" onClick={openAdd}>
+            <Plus className="size-4" /> Add event
+          </button>
+        </div>
       </div>
+
+      {extract.isRunning && (
+        <div className="flex items-start gap-2 rounded-lg bg-navy-50/60 px-3 py-2.5 text-xs text-navy-700">
+          <Sparkles className="size-4 shrink-0 mt-px text-amber-500" />
+          <span>Claude is reading the project's documents and drafting the delay-event register. This can take a minute or two.</span>
+        </div>
+      )}
+      {extract.error && (
+        <div className="flex items-start gap-2 rounded-lg bg-error-bg/60 px-3 py-2.5 text-xs text-error">
+          <AlertTriangle className="size-4 shrink-0 mt-px" />
+          <span>{extract.error}</span>
+        </div>
+      )}
 
       {/* ── Summary strip ── */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
@@ -142,6 +177,16 @@ export function DelayEventsTab({ projectId }: { projectId: string }) {
         <Card className="p-10 text-center text-sm text-muted inline-flex items-center justify-center gap-2 w-full">
           <Loader2 className="size-4 animate-spin" /> Loading delay events…
         </Card>
+      ) : events.length === 0 && extract.isRunning ? (
+        <Card className="p-10 text-center">
+          <span className="size-12 mx-auto rounded-xl bg-navy-50 text-navy-600 grid place-items-center">
+            <Loader2 className="size-6 animate-spin" />
+          </span>
+          <h3 className="mt-3 font-semibold text-ink">Extracting delay events with AI…</h3>
+          <p className="mt-1 text-sm text-muted max-w-md mx-auto">
+            Claude is reading the project's analysed documents and drafting the delay-event register.
+          </p>
+        </Card>
       ) : events.length === 0 ? (
         <Card className="p-10 text-center">
           <span className="size-12 mx-auto rounded-xl bg-navy-50 text-navy-600 grid place-items-center">
@@ -149,12 +194,18 @@ export function DelayEventsTab({ projectId }: { projectId: string }) {
           </span>
           <h3 className="mt-3 font-semibold text-ink">No delay events yet</h3>
           <p className="mt-1 text-sm text-muted max-w-md mx-auto">
-            Add a delay event manually to start building this project's register. Each event is saved
-            and can be reviewed, edited or deleted.
+            Upload the contract, programme and correspondence in the Data Room, then let AI extract
+            the delay events — or add them manually. Each event is saved and can be reviewed, edited or deleted.
           </p>
-          <button className="btn btn-primary btn-sm mt-4 inline-flex" onClick={openAdd}>
-            <Plus className="size-4" /> Add event
-          </button>
+          <div className="mt-4 flex items-center justify-center gap-2">
+            <button className="btn btn-primary btn-sm inline-flex" onClick={handleExtract} disabled={extract.isRunning}>
+              {extract.isRunning ? <Loader2 className="size-4 animate-spin" /> : <Sparkles className="size-4" />}
+              {extract.isRunning ? "Extracting…" : "Extract with AI"}
+            </button>
+            <button className="btn btn-outline btn-sm inline-flex" onClick={openAdd}>
+              <Plus className="size-4" /> Add event
+            </button>
+          </div>
         </Card>
       ) : (
         <div className="grid grid-cols-1 lg:grid-cols-5 gap-4 items-start">

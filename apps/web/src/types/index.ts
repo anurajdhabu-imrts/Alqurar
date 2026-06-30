@@ -390,9 +390,27 @@ export interface UploadedClaimDocument {
   uploadedBy: string;
   claimRef?: string;
   note?: string;
-  status: "Uploaded" | "Under Review";
+  status: "Uploaded" | "Under Review" | "Analysed";
   /** Google Drive file id once the file is stored. */
   driveFileId?: string;
+  /** Cached AI analysis, present once the file has been analysed in the data room. */
+  analysis?: StoredDocumentAnalysis | null;
+  /** Background-analysis lifecycle: "" (never run) | pending | analyzing | done | failed. */
+  analysisStatus?: "" | "pending" | "analyzing" | "done" | "failed";
+  analysisError?: string | null;
+}
+
+/** Cached Claude analysis stored against an uploaded document (DocumentAnalysis shape). */
+export interface StoredDocumentAnalysis {
+  document_type: string;
+  title: string;
+  summary: string;
+  relevance_to_claim: string;
+  supports_eot: boolean;
+  key_points: string[];
+  parties: string[];
+  key_dates: string[];
+  confidence: number;
 }
 
 /** A text selection a comment refers to (Word/text documents). */

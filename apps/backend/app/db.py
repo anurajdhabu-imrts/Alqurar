@@ -46,6 +46,12 @@ def init_db() -> None:
         conn.execute(text('ALTER TABLE documents ADD COLUMN IF NOT EXISTS "data" BYTEA'))
         conn.execute(text('ALTER TABLE documents ADD COLUMN IF NOT EXISTS "mime" VARCHAR'))
         conn.execute(text('ALTER TABLE documents ADD COLUMN IF NOT EXISTS "uploadedById" VARCHAR'))
+        conn.execute(text('ALTER TABLE documents ADD COLUMN IF NOT EXISTS "analysis" JSONB'))
+        conn.execute(text('ALTER TABLE documents ADD COLUMN IF NOT EXISTS "analysisStatus" VARCHAR'))
+        conn.execute(text('ALTER TABLE documents ADD COLUMN IF NOT EXISTS "analysisError" TEXT'))
+        conn.execute(text('ALTER TABLE documents ADD COLUMN IF NOT EXISTS "extractedText" TEXT'))
+        # Recover any rows left mid-flight by a restart so they get re-queued.
+        conn.execute(text("UPDATE documents SET \"analysisStatus\" = 'pending' WHERE \"analysisStatus\" = 'analyzing'"))
         conn.execute(text('ALTER TABLE client_profiles ADD COLUMN IF NOT EXISTS "accessToken" VARCHAR'))
         conn.execute(text('ALTER TABLE document_comments ADD COLUMN IF NOT EXISTS "anchorText" TEXT'))
         conn.execute(text('ALTER TABLE document_comments ADD COLUMN IF NOT EXISTS "anchorStart" INTEGER'))

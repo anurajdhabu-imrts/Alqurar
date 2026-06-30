@@ -9,7 +9,7 @@ import {
 } from "lucide-react";
 import { Badge, type Tone } from "@/components/ui/Badge";
 import { Card } from "@/components/ui/Card";
-import { useDelayEvents } from "@/hooks/useDelayEvents";
+import { useDelayEvents, useDelayEventsExtractor } from "@/hooks/useDelayEvents";
 import { cn, formatDate } from "@/lib/utils";
 import type {
   DelayCause,
@@ -48,6 +48,9 @@ const UNLINKED_KEY = "__unlinked__";
 
 export function EventsByDocumentTab({ projectId }: { projectId: string }) {
   const { data: events = [], isLoading } = useDelayEvents(projectId);
+  // Same auto-extraction as the Delay Events tab — opening this tab after the
+  // documents are analysed populates the grouping from AI on its own.
+  const extract = useDelayEventsExtractor(projectId, !isLoading, events.length);
   const [open, setOpen] = useState<Record<string, boolean>>({});
 
   const groups = useMemo<DocGroup[]>(() => {
@@ -119,6 +122,16 @@ export function EventsByDocumentTab({ projectId }: { projectId: string }) {
         <Card className="p-10 text-center text-sm text-muted inline-flex items-center justify-center gap-2 w-full">
           <Loader2 className="size-4 animate-spin" /> Loading events…
         </Card>
+      ) : events.length === 0 && extract.isRunning ? (
+        <Card className="p-10 text-center">
+          <span className="size-12 mx-auto rounded-xl bg-navy-50 text-navy-600 grid place-items-center">
+            <Loader2 className="size-6 animate-spin" />
+          </span>
+          <h3 className="mt-3 font-semibold text-ink">Extracting events with AI…</h3>
+          <p className="mt-1 text-sm text-muted max-w-md mx-auto">
+            Claude is reading the project's analysed documents. The events will appear here grouped by source.
+          </p>
+        </Card>
       ) : events.length === 0 ? (
         <Card className="p-10 text-center">
           <span className="size-12 mx-auto rounded-xl bg-navy-50 text-navy-600 grid place-items-center">
@@ -126,7 +139,8 @@ export function EventsByDocumentTab({ projectId }: { projectId: string }) {
           </span>
           <h3 className="mt-3 font-semibold text-ink">No events yet</h3>
           <p className="mt-1 text-sm text-muted max-w-md mx-auto">
-            Once delay events are added in the Delay Events tab, they will appear here grouped by their source documents.
+            Upload and analyse documents in the Data Room — AI extracts the delay events and they appear
+            here grouped by their source documents. You can also extract manually from the Delay Events tab.
           </p>
         </Card>
       ) : (
