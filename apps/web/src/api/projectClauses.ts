@@ -29,10 +29,16 @@ export interface ProjectClauseCreatePayload {
 
 export type ProjectClauseUpdatePayload = Partial<ProjectClauseCreatePayload>;
 
+export interface ClauseExtractStatus {
+  status: "idle" | "running" | "done" | "failed";
+  error?: string;
+  count?: number;
+}
+
 export interface ContractExtractResult {
   stored: boolean;
   documentId: string;
-  clausesExtracted: number;
+  status: ClauseExtractStatus["status"];
   message: string;
 }
 
@@ -73,7 +79,8 @@ export async function deleteProjectClauseApi(projectId: string, id: string): Pro
   await api.delete(`/projects/${projectId}/clauses/${id}`);
 }
 
-/** Upload the project's contract for clause extraction (AI step is on hold). */
+/** Upload the project's contract; the backend extracts its clauses with AI in
+ * the background. Returns quickly — poll {@link getClauseExtractStatusApi}. */
 export async function extractProjectClausesApi(
   projectId: string,
   file: File,
@@ -85,5 +92,11 @@ export async function extractProjectClausesApi(
     form,
     { headers: { "Content-Type": "multipart/form-data" }, timeout: 60_000 },
   );
+  return data;
+}
+
+/** Current state of background clause extraction for a project. */
+export async function getClauseExtractStatusApi(projectId: string): Promise<ClauseExtractStatus> {
+  const { data } = await api.get<ClauseExtractStatus>(`/projects/${projectId}/clauses/extract-status`);
   return data;
 }

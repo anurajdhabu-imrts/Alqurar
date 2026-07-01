@@ -341,3 +341,111 @@ async def extract_delay_events(
     payload = next((b.text for b in response.content if b.type == "text"), "")
     data = json.loads(payload)
     return data.get("events", [])
+
+
+# ── Clause extraction (per project's own Clause Library) ────────────────────
+# Reads a project's contract and drafts the clauses an EOT claim relies on, in
+# the same shape as the project_clauses table. Output mirrors
+# app.schemas.project_clause so the rows drop straight into the library.
+
+_CLAUSES_SYSTEM_PROMPT = (
+    "You are a construction-contract specialist. You are given the extracted text "
+    "of a project's contract (conditions of contract — e.g. a FIDIC Red/Yellow/Silver "
+    "Book or NEC4 form, plus any Particular Conditions). Extract the individual "
+    "clauses and sub-clauses an Extension of Time (EOT) / delay claim would rely on — "
+    "principally those covering time for completion, extension of time, delay damages, "
+    "notices, claims procedure, variations, and payment.\n\n"
+    "Rules:\n"
+    "- Only output clauses that actually appear in the text. Do NOT invent clause "
+    "numbers, titles or wording.\n"
+    "- PRIORITISE the OPERATIVE clauses that grant rights and set procedures — these "
+    "are what an EOT claim is built on. In FIDIC terms these are typically the "
+    "Sub-Clauses under Clause 8 (Time/Extension of Time/Delay Damages), Clause 13 "
+    "(Variations), Clause 14 (Payment), Clause 4 (Unforeseeable conditions) and "
+    "Clause 20 (Claims/Notice procedure). For NEC4, the compensation-event and "
+    "early-warning clauses.\n"
+    "- Do NOT fill the list with entries from the Definitions section (e.g. FIDIC "
+    "Sub-Clause 1.1 'Definition: …'). Include a definition ONLY if it is itself "
+    "claim-critical (e.g. the definition of Delay Damages or Time for Completion), "
+    "and never at the expense of an operative clause.\n"
+    "- 'clause_number' is the exact number as written (e.g. '8.5', '20.2.1').\n"
+    "- 'clause_title' is the heading as written (e.g. 'Extension of Time for Completion').\n"
+    "- 'clause_description' is a concise one or two sentence plain-language summary of "
+    "what the clause provides — grounded only in the text.\n"
+    "- 'contract_standard' is the contract/book the clause is from (e.g. 'FIDIC Red 2017'); "
+    "use the provided contract standard when given.\n"
+    "- 'tags' are 2-4 short topical tags (e.g. 'EOT', 'notice', 'time-bar', 'variation').\n"
+    "- Return at most ~40 clauses, ordered by how central they are to an EOT/delay claim.\n"
+    "- If the text contains no usable clauses, return an empty list."
+)
+
+_CLAUSE_ITEM_SCHEMA = {
+    "type": "object",
+    "properties": {
+        "contract_standard": {"type": "string"},
+        "clause_number": {"type": "string"},
+        "clause_title": {"type": "string"},
+        "clause_description": {"type": "string"},
+        "tags": {"type": "array", "items": {"type": "string"}},
+    },
+    "required": [
+        "contract_standard", "clause_number", "clause_title",
+        "clause_description", "tags",
+    ],
+    "additionalProperties": False,
+}
+
+_CLAUSES_OUTPUT_SCHEMA = {
+    "type": "object",
+    "properties": {"clauses": {"type": "array", "items": _CLAUSE_ITEM_SCHEMA}},
+    "required": ["clauses"],
+    "additionalProperties": False,
+}
+
+
+async def extract_clauses(
+    *,
+    text: str,
+    filename: str,
+    standard: str | None = None,
+    project_name: str | None = None,
+) -> list[dict]:
+    """Draft a project's clause library from its contract text.
+
+    Returns a list of plain dicts, one per clause, in the project_clauses shape.
+    """
+    ctx_bits = []
+    if project_name:
+        ctx_bits.append(f"Project: {project_name}")
+    if standard:
+        ctx_bits.append(f"Contract standard: {standard}")
+    header = " | ".join(ctx_bits)
+
+    parts = [f"Filename: {filename}"]
+    if header:
+        parts.append(header)
+    body = text or "(no machine-readable text could be extracted from the contract)"
+    parts.append(f"\n--- Contract text ---\n{body}")
+    user_content = "\n".join(parts)
+
+    async with _client().messages.stream(
+        model=EXTRACTION_MODEL,
+        max_tokens=8192,
+        thinking={"type": "adaptive"},
+        system=[
+            {
+                "type": "text",
+                "text": _CLAUSES_SYSTEM_PROMPT,
+                "cache_control": {"type": "ephemeral"},
+            }
+        ],
+        messages=[{"role": "user", "content": user_content}],
+        output_config={
+            "effort": "low",
+            "format": {"type": "json_schema", "schema": _CLAUSES_OUTPUT_SCHEMA},
+        },
+    ) as stream:
+        response = await stream.get_final_message()
+
+    payload = next((b.text for b in response.content if b.type == "text"), "")
+    return json.loads(payload).get("clauses", [])

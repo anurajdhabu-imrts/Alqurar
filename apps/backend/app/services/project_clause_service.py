@@ -77,3 +77,39 @@ def delete_clause(clause_id: str) -> bool:
         db.delete(c)
         db.commit()
         return True
+
+
+def replace_ai_clauses(project_id: str, clauses: List[Dict], created_by: str = "ai") -> List[Dict]:
+    """Replace this project's AI-extracted clauses with a fresh set.
+
+    Only rows previously created by AI (created_by == "ai") are removed, so any
+    clauses the analyst added by hand are preserved. Used when a contract is
+    (re-)uploaded and re-analysed.
+    """
+    now = _now_iso()
+    base = int(time.time() * 1000)
+    with SessionLocal() as db:
+        db.query(ProjectClause).filter(
+            ProjectClause.projectId == project_id,
+            ProjectClause.created_by == created_by,
+        ).delete(synchronize_session=False)
+
+        rows: List[ProjectClause] = []
+        for i, c in enumerate(clauses):
+            rows.append(
+                ProjectClause(
+                    id=f"pcl-ai-{base}-{i}",
+                    projectId=project_id,
+                    contract_standard=c.get("contract_standard") or "",
+                    clause_number=c.get("clause_number") or "",
+                    clause_title=c.get("clause_title") or "",
+                    clause_description=c.get("clause_description") or "",
+                    tags=list(c.get("tags") or []),
+                    created_by=created_by,
+                    created_at=now,
+                    updated_at=now,
+                )
+            )
+        db.add_all(rows)
+        db.commit()
+        return [r.to_dict() for r in rows]

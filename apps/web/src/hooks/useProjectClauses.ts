@@ -1,8 +1,10 @@
+import { useEffect, useRef } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   createProjectClauseApi,
   deleteProjectClauseApi,
   extractProjectClausesApi,
+  getClauseExtractStatusApi,
   listProjectClausesApi,
   updateProjectClauseApi,
   type ProjectClauseCreatePayload,
@@ -46,11 +48,43 @@ export function useDeleteProjectClause(projectId: string) {
   });
 }
 
-/** Upload the contract document for AI clause extraction (AI step on hold). */
+export const clauseExtractStatusKey = (projectId: string) =>
+  ["clause-extract-status", projectId] as const;
+
+/** Upload the contract; the backend extracts clauses with AI in the background.
+ * Seeds the status query so {@link useClauseExtractStatus} starts polling. */
 export function useExtractProjectClauses(projectId: string) {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: (file: File) => extractProjectClausesApi(projectId, file),
-    onSuccess: () => qc.invalidateQueries({ queryKey: projectClausesKey(projectId) }),
+    onSuccess: (res) =>
+      qc.setQueryData(clauseExtractStatusKey(projectId), {
+        status: res.status,
+        // carry the "not configured" message through as an error when idle
+        error: res.status === "idle" ? res.message : undefined,
+      }),
   });
+}
+
+/** Polls background clause-extraction status; when it finishes, refreshes the
+ * project's clause list so the newly extracted clauses appear. */
+export function useClauseExtractStatus(projectId: string) {
+  const qc = useQueryClient();
+  const query = useQuery({
+    queryKey: clauseExtractStatusKey(projectId),
+    queryFn: () => getClauseExtractStatusApi(projectId),
+    enabled: !!projectId,
+    refetchInterval: (q) => (q.state.data?.status === "running" ? 3000 : false),
+  });
+
+  const prev = useRef<string | undefined>(undefined);
+  useEffect(() => {
+    const status = query.data?.status;
+    if (prev.current === "running" && (status === "done" || status === "failed")) {
+      qc.invalidateQueries({ queryKey: projectClausesKey(projectId) });
+    }
+    prev.current = status;
+  }, [query.data?.status, projectId, qc]);
+
+  return query;
 }

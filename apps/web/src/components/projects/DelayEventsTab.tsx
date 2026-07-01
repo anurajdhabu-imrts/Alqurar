@@ -1,9 +1,11 @@
 import { useMemo, useState } from "react";
 import {
   AlertTriangle,
+  BookText,
   Building2,
   Check,
   CheckCircle2,
+  ChevronDown,
   ChevronRight,
   CircleDot,
   FileText,
@@ -28,10 +30,12 @@ import {
   useDeleteDelayEvent,
   useSetDelayEventStatus,
 } from "@/hooks/useDelayEvents";
+import { useProjectClausesQuery } from "@/hooks/useProjectClauses";
 import { cn, formatDate } from "@/lib/utils";
 import type {
   AdmissibilityStatus,
   ChronologyItem,
+  ClauseRef,
   DelayCause,
   DelayReviewStatus,
   ProjectDelayEvent,
@@ -67,10 +71,41 @@ const actorMeta: Record<ChronologyItem["actor"], { tone: string; icon: typeof Bu
   System: { tone: "bg-navy-50 text-muted", icon: Sparkles },
 };
 
+/** Pull clause numbers like "8.5", "20.2.1", "4.12" out of an event's clause text. */
+function extractClauseNumbers(text: string): string[] {
+  const out: string[] = [];
+  for (const m of (text || "").matchAll(/\d+(?:\.\d+)+/g)) {
+    if (!out.includes(m[0])) out.push(m[0]);
+  }
+  return out;
+}
+
+/** A cited number and a library clause number are related when equal or one is a
+ *  sub-clause of the other (cited "20.2.1" ↔ library "20.2"). */
+function clausesRelated(a: string, b: string): boolean {
+  return a === b || a.startsWith(`${b}.`) || b.startsWith(`${a}.`);
+}
+
+/** Match an event's cited clauses to this project's clause library. */
+function matchEventClauses(clauseText: string, library: ClauseRef[]) {
+  const matched: ClauseRef[] = [];
+  const unmatched: string[] = [];
+  for (const n of extractClauseNumbers(clauseText)) {
+    const hits = library.filter((c) => clausesRelated(n, c.clause));
+    if (hits.length) {
+      for (const h of hits) if (!matched.some((m) => m.id === h.id)) matched.push(h);
+    } else {
+      unmatched.push(n);
+    }
+  }
+  return { matched, unmatched };
+}
+
 type Filter = "all" | "pending" | "critical";
 
 export function DelayEventsTab({ projectId }: { projectId: string }) {
   const { data: events = [], isLoading } = useDelayEvents(projectId);
+  const { data: clauses = [] } = useProjectClausesQuery(projectId);
   const setStatusM = useSetDelayEventStatus(projectId);
   const deleteM = useDeleteDelayEvent(projectId);
   // Auto-extracts from the data room once documents are analysed (when empty),
@@ -267,6 +302,7 @@ export function DelayEventsTab({ projectId }: { projectId: string }) {
               <EventDetail
                 key={selected.id}
                 event={selected}
+                clauses={clauses}
                 onStatus={setStatus}
                 onEdit={handleEdit}
                 onDelete={handleDelete}
@@ -324,15 +360,20 @@ function SummaryStat({
 
 function EventDetail({
   event,
+  clauses,
   onStatus,
   onEdit,
   onDelete,
 }: {
   event: ProjectDelayEvent;
+  clauses: ClauseRef[];
   onStatus: (id: string, status: DelayReviewStatus) => void;
   onEdit: (event: ProjectDelayEvent) => void;
   onDelete: (id: string) => void;
 }) {
+  const [openClause, setOpenClause] = useState<string | null>(null);
+  const { matched, unmatched } = matchEventClauses(event.clause || "", clauses);
+
   return (
     <Card>
       {/* Header */}
@@ -371,6 +412,66 @@ function EventDetail({
       <div className="px-5 py-4 border-b border-border">
         <SectionLabel>Narrative</SectionLabel>
         <p className="mt-2 text-sm text-ink/90 leading-relaxed">{event.narrative}</p>
+      </div>
+
+      {/* Contractual basis — cited clauses linked to this project's Clause Library */}
+      <div className="px-5 py-4 border-b border-border">
+        <SectionLabel>
+          Contractual basis <span className="text-faint font-normal">— cited clauses from this project's library</span>
+        </SectionLabel>
+        {matched.length === 0 && unmatched.length === 0 ? (
+          <p className="mt-2 text-sm text-muted">No clause cited for this event yet.</p>
+        ) : (
+          <div className="mt-3 space-y-2">
+            {matched.map((c) => {
+              const open = openClause === c.id;
+              return (
+                <div key={c.id} className="rounded-lg border border-border overflow-hidden">
+                  <button
+                    onClick={() => setOpenClause(open ? null : c.id)}
+                    className="w-full flex items-center gap-3 px-3 py-2.5 text-left hover:bg-navy-50/50 transition-colors"
+                  >
+                    <span className="size-8 shrink-0 rounded-lg bg-navy-50 text-navy-700 grid place-items-center">
+                      <BookText className="size-4" />
+                    </span>
+                    <div className="min-w-0 flex-1">
+                      <p className="text-sm font-medium text-ink truncate">Clause {c.clause} — {c.title}</p>
+                      <p className="text-xs text-muted truncate">{c.book}</p>
+                    </div>
+                    {open ? (
+                      <ChevronDown className="size-4 text-faint shrink-0" />
+                    ) : (
+                      <ChevronRight className="size-4 text-faint shrink-0" />
+                    )}
+                  </button>
+                  {open && (
+                    <div className="px-3 pb-3 pl-13">
+                      <p className="text-sm text-ink/90 leading-relaxed">{c.summary}</p>
+                      {c.tags.length > 0 && (
+                        <div className="mt-2 flex flex-wrap gap-1.5">
+                          {c.tags.map((t) => (
+                            <span key={t} className="text-[11px] font-medium text-muted bg-navy-50 rounded px-2 py-0.5">#{t}</span>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+            {unmatched.length > 0 && (
+              <div className="text-xs text-muted">
+                <span className="mr-1">Also cited, not yet in the library:</span>
+                {unmatched.map((n) => (
+                  <span key={n} className="inline-flex items-center mr-1.5 text-[11px] font-medium text-amber-700 bg-amber-50 rounded px-1.5 py-0.5">
+                    {n}
+                  </span>
+                ))}
+                <span className="block mt-1 text-faint">Upload the contract in the Clause Library tab so these resolve.</span>
+              </div>
+            )}
+          </div>
+        )}
       </div>
 
       {/* Chronology */}
