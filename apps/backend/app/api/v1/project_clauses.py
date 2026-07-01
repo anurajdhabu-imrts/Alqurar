@@ -6,22 +6,25 @@ project's uploaded contract. Routes are nested under a project:
     POST   /projects/{project_id}/clauses
     PATCH  /projects/{project_id}/clauses/{clause_id}
     DELETE /projects/{project_id}/clauses/{clause_id}
-    POST   /projects/{project_id}/clauses/extract   (upload the contract)
+    POST   /projects/{project_id}/clauses/extract          (upload the contract)
+    GET    /projects/{project_id}/clauses/extract-status   (poll AI extraction)
 
-`extract` stores the uploaded contract in the project's data room so it is ready
-for AI processing. The AI clause extraction itself is on hold until the Anthropic
-key is available — for now the endpoint just confirms the contract was saved.
+`extract` stores the uploaded contract in the project's data room and, when the
+Anthropic key is configured, kicks off background AI extraction that fills the
+project's clause library. The client polls `extract-status` for progress.
 """
+import os
 from datetime import datetime, timezone
 from typing import List
 
-from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile, status
+from fastapi import APIRouter, BackgroundTasks, Depends, File, Form, HTTPException, UploadFile, status
 
 from app.schemas.project_clause import (
     ProjectClauseCreate,
     ProjectClauseOut,
     ProjectClauseUpdate,
 )
+from app.services import clause_extraction
 from app.services.document_service import create_document, next_document_id
 from app.services.project_clause_service import (
     add_clause,
@@ -99,15 +102,16 @@ async def remove_project_clause(
 @router.post("/{project_id}/clauses/extract", status_code=status.HTTP_201_CREATED)
 async def upload_contract_for_clauses(
     project_id: str,
+    background: BackgroundTasks,
     file: UploadFile = File(...),
     current_user=Depends(get_current_user),
     __=Depends(_MANAGE),
 ):
-    """Upload this project's contract so its clauses can be extracted.
+    """Upload this project's contract and (when AI is configured) extract its clauses.
 
-    The contract is stored in the project's data room. AI extraction is on hold
-    until the Anthropic key is available; for now we confirm the save and return
-    zero extracted clauses so the UI can show "AI extraction coming soon".
+    The contract is stored in the project's data room, then Claude reads it in the
+    background and fills the clause library. The client polls `extract-status`.
+    If the Anthropic key isn't set, the contract is saved and the response says so.
     """
     content = await file.read()
     doc_id = next_document_id()
@@ -127,9 +131,26 @@ async def upload_contract_for_clauses(
         "mime": file.content_type or "application/octet-stream",
     }
     create_document(record)
+
+    if not os.getenv("ANTHROPIC_API_KEY"):
+        return {
+            "stored": True,
+            "documentId": doc_id,
+            "status": "idle",
+            "message": "Contract saved. AI clause extraction will run once the Anthropic key is enabled.",
+        }
+
+    clause_extraction.mark_running(project_id)
+    background.add_task(clause_extraction.run_extraction, project_id, doc_id)
     return {
         "stored": True,
         "documentId": doc_id,
-        "clausesExtracted": 0,
-        "message": "Contract saved. AI clause extraction will run once the Anthropic key is enabled.",
+        "status": "running",
+        "message": "Contract saved. Claude is reading it and extracting the clauses…",
     }
+
+
+@router.get("/{project_id}/clauses/extract-status")
+async def clause_extraction_status(project_id: str, _=Depends(get_current_user)):
+    """Current state of background clause extraction for a project."""
+    return clause_extraction.get_status(project_id)

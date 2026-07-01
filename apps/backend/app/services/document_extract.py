@@ -29,7 +29,7 @@ def is_ocr_candidate(filename: str) -> bool:
     return ext == "pdf" or ext in _IMAGE_EXTS
 
 
-def _extract_pdf(raw: bytes) -> str:
+def _extract_pdf(raw: bytes, max_chars: int = MAX_CHARS) -> str:
     """Fast PDF text extraction via PyMuPDF, with a pypdf fallback."""
     try:
         import fitz  # PyMuPDF
@@ -40,7 +40,7 @@ def _extract_pdf(raw: bytes) -> str:
                 page_text = page.get_text("text") or ""
                 parts.append(page_text)
                 total += len(page_text)
-                if total >= MAX_CHARS:
+                if total >= max_chars:
                     break
         return "\n".join(parts)
     except Exception:
@@ -53,20 +53,25 @@ def _extract_pdf(raw: bytes) -> str:
             page_text = page.extract_text() or ""
             parts.append(page_text)
             total += len(page_text)
-            if total >= MAX_CHARS:
+            if total >= max_chars:
                 break
         return "\n".join(parts)
 
 
-def extract_text(filename: str, raw: bytes) -> tuple[str, bool]:
+def extract_text(filename: str, raw: bytes, max_chars: int = MAX_CHARS) -> tuple[str, bool]:
     """Return (text, truncated). `text` is "" when the format isn't extractable
-    (e.g. an image, or a scanned PDF with no embedded text → handled by OCR)."""
+    (e.g. an image, or a scanned PDF with no embedded text → handled by OCR).
+
+    `max_chars` bounds the extracted text. It defaults to MAX_CHARS (fine for the
+    short per-document analysis), but callers reading a long document end-to-end —
+    e.g. extracting clauses from a full contract — pass a larger value so the
+    important later sections aren't cut off."""
     ext = _ext(filename)
     text = ""
 
     try:
         if ext == "pdf":
-            text = _extract_pdf(raw)
+            text = _extract_pdf(raw, max_chars)
         elif ext in ("docx", "doc"):
             import docx
 
@@ -104,7 +109,7 @@ def extract_text(filename: str, raw: bytes) -> tuple[str, bool]:
         text = ""
 
     text = text.strip()
-    truncated = len(text) > MAX_CHARS
+    truncated = len(text) > max_chars
     if truncated:
-        text = text[:MAX_CHARS]
+        text = text[:max_chars]
     return text, truncated

@@ -16,6 +16,7 @@ import { ConfirmDialog } from "@/components/ui/ConfirmDialog";
 import { AddProjectClauseModal } from "@/components/projects/AddProjectClauseModal";
 import { apiErrorMessage } from "@/api/client";
 import {
+  useClauseExtractStatus,
   useDeleteProjectClause,
   useExtractProjectClauses,
   useProjectClausesQuery,
@@ -43,14 +44,23 @@ export function ClauseLibraryTab({
   const { data: clauses, isLoading, isError, error } = useProjectClausesQuery(projectId);
   const deleteClause = useDeleteProjectClause(projectId);
   const extract = useExtractProjectClauses(projectId);
+  const extractStatus = useClauseExtractStatus(projectId);
 
   const fileRef = useRef<HTMLInputElement>(null);
   const [query, setQuery] = useState("");
   const [showAdd, setShowAdd] = useState(false);
   const [editClause, setEditClause] = useState<ClauseRef | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<ClauseRef | null>(null);
-  const [uploadMsg, setUploadMsg] = useState("");
   const [uploadErr, setUploadErr] = useState("");
+
+  // Extraction lifecycle (after upload the backend reads the contract with AI).
+  const status = extractStatus.data?.status;
+  const extracting = extract.isPending || status === "running";
+  const extractError = status === "failed" ? extractStatus.data?.error || "Clause extraction failed." : "";
+  const extractDone = status === "done";
+  const extractedCount = extractStatus.data?.count ?? 0;
+  // Shown when the contract was saved but AI isn't configured (status "idle" + message).
+  const notConfigured = status === "idle" ? extractStatus.data?.error : "";
 
   const library = useMemo(() => clauses ?? [], [clauses]);
 
@@ -75,11 +85,10 @@ export function ClauseLibraryTab({
 
   async function onPickContract(file: File | undefined) {
     if (!file) return;
-    setUploadMsg("");
     setUploadErr("");
     try {
-      const res = await extract.mutateAsync(file);
-      setUploadMsg(res.message);
+      // The result seeds the extraction-status query, which then drives the banner.
+      await extract.mutateAsync(file);
     } catch (err) {
       setUploadErr(apiErrorMessage(err, "Could not upload the contract."));
     } finally {
@@ -107,10 +116,10 @@ export function ClauseLibraryTab({
               <button
                 className="btn btn-outline"
                 onClick={() => fileRef.current?.click()}
-                disabled={extract.isPending}
+                disabled={extracting}
               >
-                {extract.isPending ? <Loader2 className="size-4 animate-spin" /> : <FileUp className="size-4" />}
-                {extract.isPending ? "Uploading…" : "Upload contract"}
+                {extracting ? <Loader2 className="size-4 animate-spin" /> : <FileUp className="size-4" />}
+                {extract.isPending ? "Uploading…" : extracting ? "Extracting…" : "Upload contract"}
               </button>
               <button className="btn btn-primary" onClick={() => setShowAdd(true)}>
                 <Plus className="size-4" /> Add clause
@@ -126,14 +135,25 @@ export function ClauseLibraryTab({
           />
         </div>
 
-        <p className="mt-3 inline-flex items-center gap-1.5 text-xs text-amber-700 bg-amber-50 rounded-md px-2.5 py-1">
-          <AlertTriangle className="size-3.5" /> AI extraction coming soon — the contract is saved now and
-          clauses can be added by hand in the meantime.
-        </p>
-
-        {uploadMsg && (
+        {extracting && (
+          <p className="mt-3 text-sm text-navy-700 bg-navy-50 rounded-md px-3 py-2 inline-flex items-center gap-2">
+            <Loader2 className="size-4 animate-spin" /> Claude is reading the contract and extracting its
+            clauses. This can take a minute or two.
+          </p>
+        )}
+        {extractDone && (
           <p className="mt-3 text-sm text-success bg-success-bg rounded-md px-3 py-2 inline-flex items-center gap-2">
-            <CheckCircle2 className="size-4" /> {uploadMsg}
+            <CheckCircle2 className="size-4" /> Extracted {extractedCount} clause{extractedCount === 1 ? "" : "s"} from the contract.
+          </p>
+        )}
+        {notConfigured && (
+          <p className="mt-3 inline-flex items-center gap-1.5 text-xs text-amber-700 bg-amber-50 rounded-md px-2.5 py-1">
+            <AlertTriangle className="size-3.5" /> {notConfigured}
+          </p>
+        )}
+        {extractError && (
+          <p className="mt-3 text-sm text-error bg-error-bg rounded-md px-3 py-2 inline-flex items-center gap-2">
+            <AlertTriangle className="size-4" /> {extractError}
           </p>
         )}
         {uploadErr && (
