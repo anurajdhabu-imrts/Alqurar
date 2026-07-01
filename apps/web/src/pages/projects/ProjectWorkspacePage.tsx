@@ -4,6 +4,7 @@ import {
   ArrowLeft,
   BookText,
   Building2,
+  FileSignature,
   FileStack,
   FolderKanban,
   ListChecks,
@@ -25,6 +26,7 @@ import { Tabs } from "@/components/ui/Tabs";
 import { DocumentsPanel } from "@/components/DocumentsPanel";
 import { DelayEventsTab } from "@/components/projects/DelayEventsTab";
 import { EventsByDocumentTab } from "@/components/projects/EventsByDocumentTab";
+import { ProposalTab } from "@/components/projects/ProposalTab";
 import { ClauseLibraryTab } from "@/components/projects/ClauseLibraryTab";
 import { UploadedDocsList } from "@/components/client/UploadedDocsList";
 import { AssignClientsModal } from "@/components/projects/AssignClientsModal";
@@ -142,6 +144,7 @@ export function ProjectWorkspacePage() {
           { id: "dataroom", label: "Data Room", icon: Paperclip, count: docs.length },
           { id: "events", label: "Delay Events", icon: ListChecks },
           { id: "eventsByDoc", label: "Events by Document", icon: FileStack },
+          { id: "proposal", label: "Proposal", icon: FileSignature },
           { id: "clauses", label: "Clause Library", icon: BookText },
           // ── Hidden for now — uncomment when these modules are built ──
           // { id: "windows", label: "Windows Analysis", icon: GanttChartSquare },
@@ -278,6 +281,7 @@ export function ProjectWorkspacePage() {
         {/* ── Pipeline tabs (next to build) ── */}
         {tab === "events" && <DelayEventsTab projectId={id} />}
         {tab === "eventsByDoc" && <EventsByDocumentTab projectId={id} />}
+        {tab === "proposal" && <ProposalTab projectId={id} />}
         {tab === "clauses" && <ClauseLibraryTab projectId={id} projectStandard={project.standard} />}
         {/* ── Hidden for now — uncomment when these modules are built ──
         {tab === "windows" && (

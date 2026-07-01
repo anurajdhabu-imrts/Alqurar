@@ -270,6 +270,33 @@ class ProjectClause(Base):
         return d
 
 
+class EOTClaim(Base):
+    """The AI-generated Extension of Time claim document for a project (Proposal
+    tab). One row per project. `content` holds the structured claim
+    ({title, sections:[{heading, body}]}); `status` drives background generation
+    polling (""/"running"/"done"/"failed")."""
+
+    __tablename__ = "eot_claims"
+
+    projectId: Mapped[str] = mapped_column(String, primary_key=True)
+    content: Mapped[Optional[dict]] = mapped_column(JSON, nullable=True)
+    model: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+    status: Mapped[str] = mapped_column(String, default="")
+    error: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    createdAt: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+    updatedAt: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+
+    def to_dict(self) -> dict:
+        return {
+            "projectId": self.projectId,
+            "content": self.content,
+            "model": self.model,
+            "status": self.status or "",
+            "error": self.error,
+            "updatedAt": self.updatedAt,
+        }
+
+
 class PortalOTP(Base):
     """The active one-time code for a client portal link (one row per link).
     The code itself is stored hashed; rows expire and are deleted on use."""

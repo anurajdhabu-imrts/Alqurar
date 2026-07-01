@@ -449,3 +449,129 @@ async def extract_clauses(
 
     payload = next((b.text for b in response.content if b.type == "text"), "")
     return json.loads(payload).get("clauses", [])
+
+
+# ── EOT claim document generation ───────────────────────────────────────────
+# Assembles a full Extension of Time claim document from the project's delay
+# events and data-room documents, following the standard claim structure.
+
+_CLAIM_SYSTEM_PROMPT = (
+    "You are a senior forensic delay analyst drafting a formal Extension of Time "
+    "(EOT) claim document for a construction project under standards such as FIDIC, "
+    "NEC4 or CPWD. You are given the project details, the register of identified "
+    "delay events (with causes, dates, day impacts, narratives and chronologies), "
+    "and the list of supporting documents.\n\n"
+    "Write a complete, professional, submission-ready EOT claim in clearly titled "
+    "sections. Use formal, factual language and only rely on the information "
+    "provided — do NOT invent clause numbers, dates, parties or figures.\n\n"
+    "Produce these sections in order:\n"
+    "1. Project Description — brief description of the project and contract details.\n"
+    "2. Executive Summary of Claim — concise summary and total EOT sought.\n"
+    "3. Contractual Basis of the Claim — cite the relevant contract clauses and the "
+    "parties' obligations that support entitlement.\n"
+    "4. Detailed Claim Description and Background — for each delay event: a narrative, "
+    "the chronology of events, the supporting evidence (reference the documents), and "
+    "the impact on the works.\n"
+    "5. Delay Analysis — schedule impact, critical-path impact, and delay "
+    "apportionment (excusable vs culpable) across the parties.\n"
+    "6. Conclusion — summary of the claim and the requested relief (the extension of "
+    "time sought, and any associated cost where evidenced).\n"
+    "7. Attachments — the list of supporting documents referenced.\n\n"
+    "Each section's 'body' is plain text; use blank lines between paragraphs and "
+    "'- ' for bullet points. If the events register is empty or thin, say so plainly "
+    "in the Executive Summary rather than fabricating content."
+)
+
+_CLAIM_OUTPUT_SCHEMA = {
+    "type": "object",
+    "properties": {
+        "title": {"type": "string"},
+        "sections": {
+            "type": "array",
+            "items": {
+                "type": "object",
+                "properties": {
+                    "heading": {"type": "string"},
+                    "body": {"type": "string"},
+                },
+                "required": ["heading", "body"],
+                "additionalProperties": False,
+            },
+        },
+    },
+    "required": ["title", "sections"],
+    "additionalProperties": False,
+}
+
+
+def _events_brief(events: list[dict]) -> str:
+    """Render the delay-event register into compact text for the claim prompt."""
+    if not events:
+        return "(No delay events have been identified for this project.)"
+    lines = []
+    for e in events:
+        lines.append(
+            f"\n### {e.get('ref', '')} — {e.get('title', '')}\n"
+            f"Category: {e.get('category', '')} | Cause: {e.get('cause', '')} | "
+            f"Clause: {e.get('clause', '')} | Admissibility: {e.get('admissibility', '')}\n"
+            f"Period: {e.get('startDate', '')} → {e.get('endDate', '')} | "
+            f"Days impact: {e.get('daysImpact', 0)} | "
+            f"Critical path: {'yes' if e.get('criticalPath') else 'no'}\n"
+            f"Narrative: {e.get('narrative', '')}"
+        )
+        chron = e.get("chronology") or []
+        if chron:
+            steps = "; ".join(
+                f"{c.get('date', '')} {c.get('actor', '')}: {c.get('title', '')}" for c in chron
+            )
+            lines.append(f"Chronology: {steps}")
+        srcs = e.get("sources") or []
+        if srcs:
+            lines.append("Sources: " + ", ".join(s.get("name", "") for s in srcs))
+    return "\n".join(lines)
+
+
+async def generate_eot_claim(
+    *,
+    project: dict,
+    events: list[dict],
+    document_names: list[str],
+) -> dict:
+    """Draft the full EOT claim document. Returns {title, sections:[{heading, body}]}."""
+    p = project or {}
+    header = [
+        f"Project: {p.get('name', '')}",
+        f"Reference: {p.get('code', '')}",
+        f"Contract standard: {p.get('standard', '')}",
+        f"Employer: {p.get('employer', '')}",
+        f"Engineer: {p.get('engineer', '')}",
+        f"Contractor: {p.get('contractor', '')}",
+        f"Location: {p.get('location', '')}",
+        f"Commencement: {p.get('commencementDate', '')}",
+        f"Baseline completion: {p.get('completionDate', '')}",
+    ]
+    docs = "\n".join(f"- {n}" for n in document_names) or "(none)"
+    user_content = (
+        "PROJECT DETAILS\n" + "\n".join(header)
+        + "\n\nDELAY EVENTS REGISTER\n" + _events_brief(events)
+        + "\n\nSUPPORTING DOCUMENTS\n" + docs
+        + "\n\nDraft the Extension of Time claim now."
+    )
+
+    async with _client().messages.stream(
+        model=MODEL,
+        max_tokens=16000,
+        thinking={"type": "adaptive"},
+        system=[
+            {"type": "text", "text": _CLAIM_SYSTEM_PROMPT, "cache_control": {"type": "ephemeral"}}
+        ],
+        messages=[{"role": "user", "content": user_content}],
+        output_config={
+            "effort": "high",
+            "format": {"type": "json_schema", "schema": _CLAIM_OUTPUT_SCHEMA},
+        },
+    ) as stream:
+        response = await stream.get_final_message()
+
+    payload = next((b.text for b in response.content if b.type == "text"), "")
+    return json.loads(payload)
