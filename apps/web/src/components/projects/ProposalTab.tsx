@@ -1,7 +1,54 @@
-import { AlertTriangle, FileSignature, Loader2, Printer, Sparkles } from "lucide-react";
+import { jsPDF } from "jspdf";
+import { AlertTriangle, Download, FileSignature, Loader2, Sparkles } from "lucide-react";
 import { Card } from "@/components/ui/Card";
 import { useGenerateProposal, useProposal } from "@/hooks/useProposal";
+import type { ClaimSection } from "@/api/proposals";
 import { formatDate } from "@/lib/utils";
+
+/** Build a text-based (selectable) PDF from the claim document and download it. */
+function downloadClaimPdf(title: string, sections: ClaimSection[]) {
+  const pdf = new jsPDF({ unit: "pt", format: "a4" });
+  const margin = 48;
+  const pageW = pdf.internal.pageSize.getWidth();
+  const pageH = pdf.internal.pageSize.getHeight();
+  const maxW = pageW - margin * 2;
+  let y = margin;
+
+  const ensure = (space: number) => {
+    if (y + space > pageH - margin) {
+      pdf.addPage();
+      y = margin;
+    }
+  };
+
+  const write = (text: string, size: number, style: "bold" | "normal", gapAfter: number) => {
+    pdf.setFont("helvetica", style);
+    pdf.setFontSize(size);
+    const lineH = size * 1.4;
+    for (const raw of text.split("\n")) {
+      if (raw.trim() === "") {
+        y += lineH * 0.5;
+        continue;
+      }
+      for (const line of pdf.splitTextToSize(raw, maxW) as string[]) {
+        ensure(lineH);
+        pdf.text(line, margin, y);
+        y += lineH;
+      }
+    }
+    y += gapAfter;
+  };
+
+  write(title, 17, "bold", 14);
+  sections.forEach((s, i) => {
+    ensure(40);
+    write(`${i + 1}. ${s.heading}`, 12, "bold", 4);
+    write(s.body, 10.5, "normal", 12);
+  });
+
+  const safe = (title || "EOT Claim").replace(/[^\w\-. ]+/g, "").trim().slice(0, 80) || "EOT Claim";
+  pdf.save(`${safe}.pdf`);
+}
 
 /**
  * Proposal tab — the AI-generated Extension of Time claim document, assembled
@@ -32,8 +79,11 @@ export function ProposalTab({ projectId }: { projectId: string }) {
         </div>
         <div className="flex items-center gap-2">
           {doc && !running && (
-            <button className="btn btn-outline btn-sm" onClick={() => window.print()}>
-              <Printer className="size-4" /> Print / PDF
+            <button
+              className="btn btn-outline btn-sm"
+              onClick={() => downloadClaimPdf(doc.title, doc.sections)}
+            >
+              <Download className="size-4" /> Download PDF
             </button>
           )}
           <button className="btn btn-primary btn-sm" onClick={handleGenerate} disabled={running}>
