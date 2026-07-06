@@ -56,10 +56,15 @@ class ClientProfile(Base):
     # Secret token for the client's passwordless upload portal link
     # (/portal/{accessToken}). Unique per client; how they access without a login.
     accessToken: Mapped[Optional[str]] = mapped_column(String, unique=True, index=True, nullable=True)
+    # Client lifecycle stage: "Temporary" (just onboarded — upload only) or
+    # "Permanent" (promoted later — richer portal in future). New clients start
+    # Temporary.
+    clientType: Mapped[str] = mapped_column(String, default="Temporary")
 
     _FIELDS = (
         "userId", "company", "crNo", "country", "roleOnProject",
         "contactName", "email", "phone", "projectId", "createdAt", "accessToken",
+        "clientType",
     )
 
     def to_dict(self) -> dict:
@@ -90,11 +95,16 @@ class Project(Base):
     dataDate: Mapped[Optional[str]] = mapped_column(String, nullable=True)
     baselineProgramme: Mapped[Optional[str]] = mapped_column(String, nullable=True)
     createdAt: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+    # Distinguishes an ordinary project ("project") from a standalone proposal
+    # ("proposal"). Proposals reuse the same documents / delay-event pipeline but
+    # live in their own Proposals area, not the Projects list.
+    kind: Mapped[str] = mapped_column(String, default="project")
 
     _FIELDS = (
         "id", "name", "code", "employer", "contractor", "standard", "value", "currency",
         "startDate", "completionDate", "status", "riskLevel", "source", "location", "engineer",
         "loaRef", "commencementDate", "timeForCompletionDays", "dataDate", "baselineProgramme", "createdAt",
+        "kind",
     )
 
     def to_dict(self) -> dict:
@@ -277,6 +287,34 @@ class EOTClaim(Base):
     polling (""/"running"/"done"/"failed")."""
 
     __tablename__ = "eot_claims"
+
+    projectId: Mapped[str] = mapped_column(String, primary_key=True)
+    content: Mapped[Optional[dict]] = mapped_column(JSON, nullable=True)
+    model: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+    status: Mapped[str] = mapped_column(String, default="")
+    error: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    createdAt: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+    updatedAt: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+
+    def to_dict(self) -> dict:
+        return {
+            "projectId": self.projectId,
+            "content": self.content,
+            "model": self.model,
+            "status": self.status or "",
+            "error": self.error,
+            "updatedAt": self.updatedAt,
+        }
+
+
+class ClientProposal(Base):
+    """The AI-generated client-facing costed proposal for a proposal record
+    (Proposals → New Proposal → Proposal tab). One row per proposal. `content`
+    holds the structured proposal ({title, sections:[{heading, body}],
+    costing:[{item, description, amount}], currency, total}); `status` drives
+    background-generation polling (""/"running"/"done"/"failed")."""
+
+    __tablename__ = "client_proposals"
 
     projectId: Mapped[str] = mapped_column(String, primary_key=True)
     content: Mapped[Optional[dict]] = mapped_column(JSON, nullable=True)

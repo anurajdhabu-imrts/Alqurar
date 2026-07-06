@@ -52,7 +52,9 @@ def init_db() -> None:
         conn.execute(text('ALTER TABLE documents ADD COLUMN IF NOT EXISTS "extractedText" TEXT'))
         # Recover any rows left mid-flight by a restart so they get re-queued.
         conn.execute(text("UPDATE documents SET \"analysisStatus\" = 'pending' WHERE \"analysisStatus\" = 'analyzing'"))
+        conn.execute(text("ALTER TABLE projects ADD COLUMN IF NOT EXISTS \"kind\" VARCHAR DEFAULT 'project'"))
         conn.execute(text('ALTER TABLE client_profiles ADD COLUMN IF NOT EXISTS "accessToken" VARCHAR'))
+        conn.execute(text("ALTER TABLE client_profiles ADD COLUMN IF NOT EXISTS \"clientType\" VARCHAR DEFAULT 'Temporary'"))
         conn.execute(text('ALTER TABLE document_comments ADD COLUMN IF NOT EXISTS "anchorText" TEXT'))
         conn.execute(text('ALTER TABLE document_comments ADD COLUMN IF NOT EXISTS "anchorStart" INTEGER'))
         conn.execute(text('ALTER TABLE document_comments ADD COLUMN IF NOT EXISTS "anchorLength" INTEGER'))

@@ -6,9 +6,19 @@ from app.db import SessionLocal
 from app.models import Project
 
 
-def list_projects() -> List[Dict]:
+def list_projects(kind: Optional[str] = None) -> List[Dict]:
+    """All projects, optionally filtered by kind ("project" or "proposal").
+
+    Legacy rows created before the `kind` column existed are treated as
+    ordinary projects (kind is null → "project")."""
     with SessionLocal() as db:
-        return [p.to_dict() for p in db.query(Project).all()]
+        rows = db.query(Project).all()
+        out = [p.to_dict() for p in rows]
+    for d in out:
+        d["kind"] = d.get("kind") or "project"
+    if kind:
+        out = [d for d in out if d["kind"] == kind]
+    return out
 
 
 def get_project(project_id: str) -> Optional[Dict]:

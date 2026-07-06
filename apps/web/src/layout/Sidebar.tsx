@@ -8,6 +8,7 @@ import {
   // GitBranch,
   // ListChecks,
   Building2,
+  FileSignature,
   FolderKanban,
   LayoutDashboard,
   Settings,
@@ -33,6 +34,7 @@ const sections: { heading: string; items: NavItem[] }[] = [
     heading: "Overview",
     items: [
       { to: "/", label: "Dashboard", icon: LayoutDashboard, end: true },
+      { to: "/proposals", label: "Proposals", icon: FileSignature },
       { to: "/projects", label: "Projects", icon: FolderKanban },
     ],
   },

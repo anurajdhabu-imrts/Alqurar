@@ -29,6 +29,8 @@ class ProjectIn(BaseModel):
     dataDate: Optional[str] = None
     baselineProgramme: Optional[str] = None
     createdAt: Optional[str] = None
+    # "project" (default) or "proposal" — proposals live in the Proposals area.
+    kind: str = "project"
 
 
 class ProjectOut(ProjectIn):

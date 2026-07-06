@@ -26,6 +26,9 @@ export interface ProjectDetails extends Project {
   createdAt?: string;
   /** Where the project came from. */
   source: "contract" | "created";
+  /** "project" (default) or "proposal" — proposals live in the Proposals area
+   *  but reuse the same documents / delay-event pipeline. */
+  kind?: "project" | "proposal";
 }
 
 export const projectsKey = ["projects"] as const;
@@ -39,7 +42,17 @@ export function useCreateProject() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: (project: ProjectDetails) => createProjectApi(project),
-    onSuccess: () => qc.invalidateQueries({ queryKey: projectsKey }),
+    onSuccess: (created) => {
+      // Seed the cache so the new record is available immediately (e.g. when the
+      // proposal wizard navigates straight into the new proposal's workspace),
+      // then refetch to reconcile.
+      qc.setQueryData<ProjectDetails[]>(projectsKey, (old) => {
+        const list = old ?? [];
+        const rest = list.filter((p) => p.id !== created.id);
+        return [...rest, created];
+      });
+      qc.invalidateQueries({ queryKey: projectsKey });
+    },
   });
 }
 
@@ -51,8 +64,23 @@ export function useDeleteProject() {
   });
 }
 
-/** All projects created in the app (stored on the backend). */
+/** All ordinary projects (excludes proposals, which have their own area). */
 export function useAllProjects(): ProjectDetails[] {
   const { data } = useProjectsQuery();
-  return useMemo(() => data ?? [], [data]);
+  return useMemo(() => (data ?? []).filter((p) => (p.kind ?? "project") !== "proposal"), [data]);
+}
+
+/** All proposals (kind === "proposal"), newest first. */
+export function useAllProposals(): ProjectDetails[] {
+  const { data } = useProjectsQuery();
+  return useMemo(() => {
+    const list = (data ?? []).filter((p) => p.kind === "proposal");
+    return list.sort((a, b) => (b.createdAt ?? "").localeCompare(a.createdAt ?? ""));
+  }, [data]);
+}
+
+/** A single proposal/project by id (searches the full unfiltered list). */
+export function useProjectById(id: string): ProjectDetails | undefined {
+  const { data } = useProjectsQuery();
+  return useMemo(() => (data ?? []).find((p) => p.id === id), [data, id]);
 }

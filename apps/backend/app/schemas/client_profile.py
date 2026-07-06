@@ -19,6 +19,8 @@ class ClientProfileIn(BaseModel):
     # Secret token for the client's passwordless upload link. Never set by the
     # client; generated server-side. Returned so the admin can copy/share the link.
     accessToken: Optional[str] = None
+    # Client lifecycle stage: "Temporary" (new) or "Permanent" (promoted later).
+    clientType: str = "Temporary"
 
 
 class ClientProfileOut(ClientProfileIn):
