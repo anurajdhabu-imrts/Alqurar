@@ -6,6 +6,7 @@ import { useUpsertClientProfile, type ClientProfile } from "@/store/clientProfil
 import type { ManagedUser } from "@/types";
 
 const ROLES_ON_PROJECT = ["Contractor", "Subcontractor", "Consultant", "Employer"];
+const CLIENT_TYPES = ["Temporary", "Permanent"] as const;
 
 /**
  * Edit a registered client. The login account (name) is updated via the users
@@ -29,6 +30,7 @@ export function EditClientModal({
   const [crNo, setCrNo] = useState(profile?.crNo ?? "");
   const [country, setCountry] = useState(profile?.country ?? "");
   const [roleOnProject, setRoleOnProject] = useState(profile?.roleOnProject ?? "Contractor");
+  const [clientType, setClientType] = useState<(typeof CLIENT_TYPES)[number]>(profile?.clientType ?? "Temporary");
   const [phone, setPhone] = useState(profile?.phone ?? user.phone ?? "");
   const [error, setError] = useState("");
 
@@ -46,6 +48,7 @@ export function EditClientModal({
         crNo: crNo.trim() || undefined,
         country: country.trim() || undefined,
         roleOnProject,
+        clientType,
         contactName: contactName.trim(),
         email: user.email,
         phone: phone.trim() || undefined,
@@ -102,6 +105,13 @@ export function EditClientModal({
           <div>
             <label className="block text-xs font-medium text-muted mb-1">Contact full name</label>
             <input className="input" value={contactName} onChange={(e) => setContactName(e.target.value)} />
+          </div>
+          <div>
+            <label className="block text-xs font-medium text-muted mb-1">Client type</label>
+            <select className="input" value={clientType} onChange={(e) => setClientType(e.target.value as (typeof CLIENT_TYPES)[number])}>
+              {CLIENT_TYPES.map((t) => <option key={t} value={t}>{t}</option>)}
+            </select>
+            <p className="text-xs text-faint mt-1">Promote to Permanent to unlock the full portal (beyond document upload).</p>
           </div>
         </div>
 

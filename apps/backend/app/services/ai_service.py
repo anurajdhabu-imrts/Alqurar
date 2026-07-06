@@ -575,3 +575,124 @@ async def generate_eot_claim(
 
     payload = next((b.text for b in response.content if b.type == "text"), "")
     return json.loads(payload)
+
+
+# ── Client proposal generation (costed services proposal) ───────────────────
+# Produces a client-facing commercial PROPOSAL to engage the consultancy for the
+# EOT / delay-claim work, with a costing breakdown derived from the identified
+# delay events. This is NOT the EOT claim itself — it is the offer to the client.
+
+_PROPOSAL_SYSTEM_PROMPT = (
+    "You are a commercial lead at a construction claims consultancy (Al Qarar) "
+    "preparing a professional PROPOSAL to a prospective CLIENT, offering to prepare "
+    "and pursue their Extension of Time (EOT) / delay-and-disruption claim. You are "
+    "given the project/proposal details, the register of delay events identified from "
+    "the client's documents, and the list of supporting documents.\n\n"
+    "Write a persuasive but factual, submission-ready proposal that scopes the work "
+    "off the identified delay events and prices it. Only rely on the information "
+    "provided — do NOT invent clause numbers, dates, parties or figures.\n\n"
+    "Produce these sections (in order) in 'sections':\n"
+    "1. Introduction — who we are and the purpose of this proposal.\n"
+    "2. Understanding of the Matter — summarise the project and the delay situation "
+    "as evidenced by the events and documents.\n"
+    "3. Identified Delay Events — a concise summary of the events found (name + one "
+    "line each) that this engagement would address.\n"
+    "4. Scope of Services — the work we will perform (document review, delay analysis, "
+    "entitlement assessment, claim drafting, negotiation support, etc.).\n"
+    "5. Approach & Methodology — how we will deliver it, aligned to the contract "
+    "standard where known.\n"
+    "6. Commercial Terms — fee basis, assumptions and exclusions, and payment terms.\n\n"
+    "Then produce a 'costing' breakdown: line items for the professional services, "
+    "each with a short 'item' name, a one-line 'description', and an 'amount' (a "
+    "number in the project currency). Scale the effort and fees sensibly to the "
+    "number and complexity of the delay events. Set 'currency' to the project's "
+    "currency and 'total' to the sum of the line-item amounts.\n\n"
+    "Each section 'body' is plain text; use blank lines between paragraphs and '- ' "
+    "for bullets. If the events register is empty, still produce a credible scoping "
+    "proposal for an initial assessment, and say the scope will be refined once the "
+    "documents are reviewed."
+)
+
+_PROPOSAL_OUTPUT_SCHEMA = {
+    "type": "object",
+    "properties": {
+        "title": {"type": "string"},
+        "sections": {
+            "type": "array",
+            "items": {
+                "type": "object",
+                "properties": {
+                    "heading": {"type": "string"},
+                    "body": {"type": "string"},
+                },
+                "required": ["heading", "body"],
+                "additionalProperties": False,
+            },
+        },
+        "costing": {
+            "type": "array",
+            "items": {
+                "type": "object",
+                "properties": {
+                    "item": {"type": "string"},
+                    "description": {"type": "string"},
+                    "amount": {"type": "number"},
+                },
+                "required": ["item", "description", "amount"],
+                "additionalProperties": False,
+            },
+        },
+        "currency": {"type": "string"},
+        "total": {"type": "number"},
+    },
+    "required": ["title", "sections", "costing", "currency", "total"],
+    "additionalProperties": False,
+}
+
+
+async def generate_client_proposal(
+    *,
+    project: dict,
+    events: list[dict],
+    document_names: list[str],
+) -> dict:
+    """Draft the costed client proposal. Returns
+    {title, sections:[{heading, body}], costing:[{item, description, amount}],
+     currency, total}."""
+    p = project or {}
+    currency = p.get("currency") or "OMR"
+    header = [
+        f"Proposal for: {p.get('name', '')}",
+        f"Reference: {p.get('code', '')}",
+        f"Contract standard: {p.get('standard', '')}",
+        f"Employer: {p.get('employer', '')}",
+        f"Engineer: {p.get('engineer', '')}",
+        f"Contractor: {p.get('contractor', '')}",
+        f"Location: {p.get('location', '')}",
+        f"Currency: {currency}",
+    ]
+    docs = "\n".join(f"- {n}" for n in document_names) or "(none)"
+    user_content = (
+        "PROPOSAL DETAILS\n" + "\n".join(header)
+        + "\n\nIDENTIFIED DELAY EVENTS\n" + _events_brief(events)
+        + "\n\nSUPPORTING DOCUMENTS\n" + docs
+        + f"\n\nDraft the costed client proposal now. Price all amounts in {currency}."
+    )
+
+    async with _client().messages.stream(
+        model=MODEL,
+        max_tokens=16000,
+        thinking={"type": "adaptive"},
+        system=[
+            {"type": "text", "text": _PROPOSAL_SYSTEM_PROMPT, "cache_control": {"type": "ephemeral"}}
+        ],
+        messages=[{"role": "user", "content": user_content}],
+        output_config={
+            "effort": "high",
+            "format": {"type": "json_schema", "schema": _PROPOSAL_OUTPUT_SCHEMA},
+        },
+    ) as stream:
+        response = await stream.get_final_message()
+
+    payload = next((b.text for b in response.content if b.type == "text"), "")
+    return json.loads(payload)

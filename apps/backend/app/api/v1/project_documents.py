@@ -56,10 +56,20 @@ async def upload_document(
     uploadedBy: str = Form(""),
     claimRef: Optional[str] = Form(None),
     note: Optional[str] = Form(None),
-    _=Depends(get_current_user),
+    analyze: bool = Form(True),
+    user=Depends(get_current_user),
 ):
-    """Receive the file, store its bytes, and kick off AI analysis in the
-    background so the upload returns immediately even for large files."""
+    """Receive the file, store its bytes, and (for staff uploads) kick off AI
+    analysis in the background so the upload returns immediately even for large
+    files.
+
+    Client-uploaded documents are NEVER auto-analysed — analysis is a staff
+    action. A client's files land un-analysed and an admin runs analysis from the
+    workspace ("Analyse pending"). This is enforced server-side by role, not just
+    the `analyze` flag, so a client cannot trigger analysis."""
+    is_client = user.get("role") == "Client View"
+    should_analyze = bool(os.getenv("ANTHROPIC_API_KEY")) and analyze and not is_client
+
     content = await file.read()
     doc_id = next_document_id()  # short sequential id: doc-1, doc-2, ...
 
@@ -92,14 +102,14 @@ async def upload_document(
         "data": content,
         "mime": file.content_type or "application/octet-stream",
     }
-    if os.getenv("ANTHROPIC_API_KEY"):
+    if should_analyze:
         record["analysisStatus"] = "pending"
     # Inserting the file bytes is blocking and the file can be large — keep it off
     # the event loop so concurrent requests (e.g. login) stay responsive.
     saved = await asyncio.to_thread(create_document, record)
 
     # Analyse in the background — the response returns now, not after the model call.
-    if os.getenv("ANTHROPIC_API_KEY"):
+    if should_analyze:
         background.add_task(run_analysis, doc_id)
     return saved
 

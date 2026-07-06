@@ -1,9 +1,8 @@
 import { useMemo } from "react";
 import { Navigate, useNavigate, useParams } from "react-router-dom";
-import { ArrowLeft, UploadCloud } from "lucide-react";
+import { ArrowLeft } from "lucide-react";
 import { Card, CardHeader } from "@/components/ui/Card";
 import { PageHeader } from "@/components/ui/PageHeader";
-import { useHasPermission } from "@/hooks/usePermission";
 import { useAssignedProjects } from "@/hooks/useAssignments";
 import { ProjectOverview } from "@/components/client/ProjectOverview";
 import { UploadedDocsList } from "@/components/client/UploadedDocsList";
@@ -13,7 +12,6 @@ export function ClientProjectDetailPage() {
   const { id = "" } = useParams();
   const navigate = useNavigate();
   const allDocs = useClaimDocuments();
-  const canUpload = useHasPermission("client.documents.upload");
   const { projects: assignedProjects, isLoading } = useAssignedProjects();
 
   const project = getProjectById(id);
@@ -44,13 +42,6 @@ export function ClientProjectDetailPage() {
       <PageHeader
         title={project.name}
         subtitle={`${project.code} · ${project.employer}`}
-        actions={
-          canUpload && (
-            <button className="btn btn-primary" onClick={() => navigate(`/client/upload?project=${project.id}`)}>
-              <UploadCloud className="size-4" /> Upload document
-            </button>
-          )
-        }
       />
 
       <ProjectOverview project={project} />

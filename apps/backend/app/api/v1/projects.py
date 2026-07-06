@@ -10,10 +10,11 @@ router = APIRouter()
 
 
 @router.get("/", response_model=List[ProjectOut])
-async def get_projects(_=Depends(get_current_user)):
+async def get_projects(kind: str | None = None, _=Depends(get_current_user)):
     """All created projects. Readable by any signed-in user (clients need this
-    to resolve the projects assigned to them)."""
-    return list_projects()
+    to resolve the projects assigned to them). Pass ?kind=project or
+    ?kind=proposal to filter."""
+    return list_projects(kind)
 
 
 @router.get("/{project_id}", response_model=ProjectOut)

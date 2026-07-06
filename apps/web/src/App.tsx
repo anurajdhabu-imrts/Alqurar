@@ -29,6 +29,9 @@ import { ClientsPage } from "@/pages/admin/ClientsPage";
 import { RegisterClientPage } from "@/pages/admin/RegisterClientPage";
 import { ProjectsPage } from "@/pages/projects/ProjectsPage";
 import { CreateProjectPage } from "@/pages/projects/CreateProjectPage";
+import { ProposalsPage } from "@/pages/proposals/ProposalsPage";
+import { NewProposalPage } from "@/pages/proposals/NewProposalPage";
+import { ProposalWorkspacePage } from "@/pages/proposals/ProposalWorkspacePage";
 import { ProjectWorkspacePage } from "@/pages/projects/ProjectWorkspacePage";
 // Lazy — pulls in the heavy Word/Excel renderers (mammoth, xlsx) only on demand.
 const DocumentViewerPage = lazy(() =>
@@ -85,6 +88,9 @@ export default function App() {
               <Route path="/projects/new" element={<CreateProjectPage />} />
               <Route path="/projects/:id/edit" element={<CreateProjectPage />} />
               <Route path="/projects/:id" element={<ProjectWorkspacePage />} />
+              <Route path="/proposals" element={<ProposalsPage />} />
+              <Route path="/proposals/new" element={<NewProposalPage />} />
+              <Route path="/proposals/:id" element={<ProposalWorkspacePage />} />
               <Route
                 path="/documents/:docId"
                 element={

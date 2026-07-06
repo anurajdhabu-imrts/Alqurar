@@ -6,7 +6,7 @@ import {
   listProjectClientsApi,
   unassignClientApi,
 } from "@/api/assignments";
-import { useAllProjects } from "@/store/projects";
+import { useAllProjects, useProjectsQuery, type ProjectDetails } from "@/store/projects";
 import type { Project } from "@/types";
 
 export const myProjectsKey = ["assignments", "me", "projects"] as const;
@@ -27,6 +27,18 @@ export function useAssignedProjects(): { projects: Project[]; isLoading: boolean
     [ids, all],
   );
   return { projects: resolved, isLoading };
+}
+
+/** Assigned proposals (kind === "proposal") resolved to full records — the
+ *  proposals a client can upload documents into. */
+export function useAssignedProposals(): { proposals: ProjectDetails[]; isLoading: boolean } {
+  const { data: ids, isLoading: idsLoading } = useMyProjectIds();
+  const { data: all, isLoading: allLoading } = useProjectsQuery();
+  const proposals = useMemo(
+    () => (ids && all ? all.filter((p) => ids.includes(p.id) && p.kind === "proposal") : []),
+    [ids, all],
+  );
+  return { proposals, isLoading: idsLoading || allLoading };
 }
 
 /** Client user ids assigned to a project (admin view). */

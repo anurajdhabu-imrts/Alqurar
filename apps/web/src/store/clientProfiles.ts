@@ -29,6 +29,9 @@ export interface ClientProfile {
   /** Secret token for the client's passwordless upload link (/portal/{accessToken}).
    *  Generated server-side. */
   accessToken?: string;
+  /** Client lifecycle stage. New clients are "Temporary"; promoted to "Permanent"
+   *  later, which will unlock a richer portal beyond document upload. */
+  clientType?: "Temporary" | "Permanent";
   /** Ready-to-share upload link, built server-side from FRONTEND_URL + token.
    *  Use this directly — do NOT construct portal URLs on the frontend. */
   portalLink?: string;

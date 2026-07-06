@@ -30,6 +30,7 @@ interface ClientRow {
   phone?: string;
   projectName?: string;
   createdAt?: string;
+  clientType: "Temporary" | "Permanent";
 }
 
 export function ClientsPage() {
@@ -68,6 +69,7 @@ export function ClientsPage() {
         phone: p?.phone ?? user.phone,
         projectName: project?.name,
         createdAt: p?.createdAt,
+        clientType: p?.clientType ?? "Temporary",
       };
     });
   }, [users, profiles, allProjects]);
@@ -133,6 +135,7 @@ export function ClientsPage() {
                 <th className="font-semibold px-5 py-3">Company / Contact</th>
                 <th className="font-semibold px-3 py-3">Email</th>
                 <th className="font-semibold px-3 py-3">Project</th>
+                <th className="font-semibold px-3 py-3">Type</th>
                 <th className="font-semibold px-3 py-3">Status</th>
                 <th className="font-semibold px-3 py-3">Registered</th>
                 <th className="font-semibold px-5 py-3 text-right">Actions</th>
@@ -141,7 +144,7 @@ export function ClientsPage() {
             <tbody>
               {isLoading && rows.length === 0 && (
                 <tr>
-                  <td colSpan={6} className="px-5 py-12 text-center text-muted">
+                  <td colSpan={7} className="px-5 py-12 text-center text-muted">
                     <Loader2 className="size-4 animate-spin inline mr-2" /> Loading clients…
                   </td>
                 </tr>
@@ -170,6 +173,9 @@ export function ClientsPage() {
                     ) : (
                       <span className="text-faint">Unassigned</span>
                     )}
+                  </td>
+                  <td className="px-3 py-3">
+                    <Badge tone={r.clientType === "Permanent" ? "navy" : "neutral"}>{r.clientType}</Badge>
                   </td>
                   <td className="px-3 py-3"><Badge tone={statusTone[r.user.status]} dot>{r.user.status}</Badge></td>
                   <td className="px-3 py-3 text-muted whitespace-nowrap">{r.createdAt ? formatDate(r.createdAt) : "—"}</td>
@@ -201,7 +207,7 @@ export function ClientsPage() {
               ))}
               {!isLoading && filtered.length === 0 && (
                 <tr>
-                  <td colSpan={6} className="px-5 py-12 text-center text-muted">
+                  <td colSpan={7} className="px-5 py-12 text-center text-muted">
                     {rows.length === 0 ? "No clients registered yet. Click “Register client” to add one." : "No clients match your search."}
                   </td>
                 </tr>

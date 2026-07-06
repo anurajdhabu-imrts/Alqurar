@@ -19,6 +19,7 @@ import type { ManagedUser } from "@/types";
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const ROLES_ON_PROJECT = ["Contractor", "Subcontractor", "Consultant", "Employer"];
+const CLIENT_TYPES = ["Temporary", "Permanent"] as const;
 
 /** Readable auto-generated password (omits ambiguous characters). */
 function generatePassword(): string {
@@ -46,6 +47,8 @@ export function RegisterClientPage() {
   const [crNo, setCrNo] = useState("");
   const [country, setCountry] = useState("");
   const [roleOnProject, setRoleOnProject] = useState("Contractor");
+  // New clients start as Temporary; an admin can promote to Permanent here or later.
+  const [clientType, setClientType] = useState<(typeof CLIENT_TYPES)[number]>("Temporary");
 
   // ── Primary contact + login ──
   const [contactName, setContactName] = useState("");
@@ -72,6 +75,7 @@ export function RegisterClientPage() {
     setCrNo("");
     setCountry("");
     setRoleOnProject("Contractor");
+    setClientType("Temporary");
     setContactName("");
     setEmail("");
     setPhone("");
@@ -123,6 +127,7 @@ export function RegisterClientPage() {
         crNo: crNo.trim() || undefined,
         country: country.trim() || undefined,
         roleOnProject,
+        clientType,
         contactName: contactName.trim(),
         email: cleanEmail,
         phone: phone.trim() || undefined,
@@ -277,6 +282,23 @@ export function RegisterClientPage() {
                   ))}
                 </select>
               </div>
+            </div>
+            <div>
+              <label className="label" htmlFor="clientType">Client type</label>
+              <select
+                id="clientType"
+                className="input max-w-xs"
+                value={clientType}
+                onChange={(e) => setClientType(e.target.value as (typeof CLIENT_TYPES)[number])}
+              >
+                {CLIENT_TYPES.map((t) => (
+                  <option key={t} value={t}>{t}</option>
+                ))}
+              </select>
+              <p className="text-xs text-faint mt-1">
+                New clients are <span className="font-medium text-muted">Temporary</span> (document upload only).
+                Promote to <span className="font-medium text-muted">Permanent</span> later to unlock the full portal.
+              </p>
             </div>
           </div>
         </Card>
