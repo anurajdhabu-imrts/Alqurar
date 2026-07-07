@@ -37,6 +37,7 @@ def get_proposal(project_id: str) -> Dict:
         return row.to_dict() if row else {
             "projectId": project_id, "content": None, "model": None,
             "status": "", "error": None, "updatedAt": None,
+            "sentToClient": False, "sentAt": None,
         }
 
 
@@ -54,6 +55,21 @@ def _set(project_id: str, **fields) -> None:
 
 def mark_running(project_id: str) -> None:
     _set(project_id, status="running", error=None)
+
+
+def mark_sent(project_id: str) -> Dict:
+    """Flag the proposal as sent to the client. Returns the updated row."""
+    with SessionLocal() as db:
+        row = db.get(ClientProposal, project_id)
+        if not row:
+            return {"error": "Proposal not found"}
+        if row.status != "done":
+            return {"error": "Proposal must be generated before sending"}
+        row.sentToClient = True
+        row.sentAt = _now()
+        row.updatedAt = _now()
+        db.commit()
+        return row.to_dict()
 
 
 def save_inputs(project_id: str, inputs: Dict) -> Dict:

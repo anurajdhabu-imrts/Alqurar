@@ -327,6 +327,10 @@ class ClientProposal(Base):
     inputs: Mapped[Optional[dict]] = mapped_column(JSON, nullable=True)
     createdAt: Mapped[Optional[str]] = mapped_column(String, nullable=True)
     updatedAt: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+    # "Send to Client" — marks a finished proposal as shared with the client via
+    # their portal. The portal only surfaces proposals where this flag is True.
+    sentToClient: Mapped[bool] = mapped_column(Boolean, default=False)
+    sentAt: Mapped[Optional[str]] = mapped_column(String, nullable=True)
 
     def to_dict(self) -> dict:
         return {
@@ -337,6 +341,8 @@ class ClientProposal(Base):
             "error": self.error,
             "inputs": self.inputs or {},
             "updatedAt": self.updatedAt,
+            "sentToClient": self.sentToClient,
+            "sentAt": self.sentAt,
         }
 
 

@@ -61,3 +61,17 @@ async def generate_client_proposal(
     client_proposal_service.mark_running(project_id)
     background.add_task(client_proposal_service.run_generation, project_id)
     return {"status": "running"}
+
+
+@router.post("/project/{project_id}/send")
+async def send_to_client(project_id: str, current_user=Depends(get_current_user)):
+    """Mark a finished proposal as 'Sent to Client'. The client can then view
+    and download it from their portal."""
+    if current_user.get("role") == "Client View":
+        raise HTTPException(status_code=403, detail="Clients cannot send proposals.")
+    if not project_service.get_project(project_id):
+        raise HTTPException(status_code=404, detail="Proposal not found")
+    result = client_proposal_service.mark_sent(project_id)
+    if "error" in result:
+        raise HTTPException(status_code=400, detail=result["error"])
+    return result

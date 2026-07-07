@@ -5,6 +5,7 @@ import {
   AlertTriangle,
   CheckCircle2,
   Download,
+  FileSignature,
   FileText,
   Loader2,
   ShieldCheck,
@@ -13,10 +14,13 @@ import {
 import {
   downloadPortalDocApi,
   getPortalApi,
+  getPortalProposalApi,
+  getPortalProposalDownloadApi,
   listPortalDocsApi,
   uploadPortalDocApi,
   type PortalData,
   type PortalProject,
+  type PortalProposal,
 } from "@/api/portal";
 import { formatDate } from "@/lib/utils";
 
@@ -85,6 +89,101 @@ export function ClientPortalPage() {
 // back requestOtpApi/verifyOtpApi in @/api/portal and re-add the gate component
 // + the not-verified branch in ClientPortalPage above.
 
+// ── My Proposal section ─────────────────────────────────────────────────────
+function MyProposalSection({ token }: { token: string }) {
+  const proposals = useQuery({
+    queryKey: ["portal-proposal", token],
+    queryFn: () => getPortalProposalApi(token),
+    enabled: !!token,
+  });
+
+  const [downloading, setDownloading] = useState<string | null>(null);
+
+  async function handleDownload(p: PortalProposal) {
+    setDownloading(p.projectId);
+    try {
+      const data = await getPortalProposalDownloadApi(token, p.projectId);
+      if (!data.content) return;
+      const { downloadProposalPdf, fetchAsDataUrl } = await import("@/lib/proposalPdf");
+      const alqararLogo = await fetchAsDataUrl("/Al Qarar Logo.png");
+      const content = data.content as Parameters<typeof downloadProposalPdf>[0];
+      downloadProposalPdf(content, {
+        clientLogo: (data.inputs as Record<string, string>)?.logo,
+        alqararLogo,
+        clientCompany: (data.inputs as Record<string, string>)?.clientCompany,
+        projectName: data.projectName || p.projectName,
+        subject: (data.inputs as Record<string, string>)?.subject,
+      });
+    } catch {
+      /* silent — the PDF builder handles its own errors */
+    } finally {
+      setDownloading(null);
+    }
+  }
+
+  if (proposals.isLoading) {
+    return (
+      <div className="card p-6 text-center text-sm text-muted inline-flex items-center justify-center gap-2 w-full">
+        <Loader2 className="size-4 animate-spin" /> Loading proposals…
+      </div>
+    );
+  }
+
+  const sent = proposals.data ?? [];
+
+  return (
+    <div className="card">
+      <div className="px-5 py-4 border-b border-border">
+        <h2 className="text-base font-semibold text-ink inline-flex items-center gap-2">
+          <FileSignature className="size-4.5 text-navy-600" /> My Proposals
+        </h2>
+      </div>
+      {sent.length === 0 ? (
+        <div className="px-5 py-10 text-center">
+          <span className="size-12 mx-auto rounded-xl bg-navy-50 text-navy-500 grid place-items-center mb-3">
+            <FileSignature className="size-6" />
+          </span>
+          <p className="text-sm text-muted max-w-md mx-auto">
+            Your proposal is currently being prepared. It will appear here once it has been shared.
+          </p>
+        </div>
+      ) : (
+        <ul className="divide-y divide-border">
+          {sent.map((p) => (
+            <li key={p.projectId} className="flex items-center gap-4 px-5 py-4">
+              <span className="size-10 shrink-0 grid place-items-center rounded-xl bg-linear-to-br from-navy-700 to-navy-900 text-amber-400">
+                <FileSignature className="size-5" />
+              </span>
+              <div className="min-w-0 flex-1">
+                <p className="text-sm font-semibold text-ink leading-snug">{p.title}</p>
+                <p className="text-xs text-muted mt-0.5">
+                  {p.date ? formatDate(p.date) : ""}
+                  {p.sentAt ? ` · Shared ${formatDate(p.sentAt)}` : ""}
+                </p>
+              </div>
+              <span className="inline-flex items-center gap-1 text-xs font-medium text-success bg-success-bg rounded-full px-2.5 py-1 shrink-0">
+                <CheckCircle2 className="size-3" /> Sent
+              </span>
+              <button
+                className="btn btn-primary btn-sm shrink-0"
+                onClick={() => handleDownload(p)}
+                disabled={downloading === p.projectId}
+              >
+                {downloading === p.projectId ? (
+                  <Loader2 className="size-4 animate-spin" />
+                ) : (
+                  <Download className="size-4" />
+                )}
+                Download Proposal
+              </button>
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
+  );
+}
+
 // ── Upload portal ───────────────────────────────────────────────────────────
 function VerifiedPortal({ token, data }: { token: string; data: PortalData }) {
   const qc = useQueryClient();
@@ -128,6 +227,9 @@ function VerifiedPortal({ token, data }: { token: string; data: PortalData }) {
           <ShieldCheck className="size-4 text-success" /> Secure upload portal — upload your project documents below.
         </p>
       </div>
+
+      {/* ── My Proposals ── */}
+      <MyProposalSection token={token} />
 
       {projects.length === 0 ? (
         <div className="card p-10 text-center text-sm text-muted">

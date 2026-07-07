@@ -3,6 +3,7 @@ import {
   generateClientProposalApi,
   getClientProposalApi,
   saveProposalInputsApi,
+  sendToClientApi,
   type ProposalInputs,
 } from "@/api/clientProposals";
 
@@ -32,6 +33,15 @@ export function useSaveProposalInputs(projectId: string) {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: (inputs: ProposalInputs) => saveProposalInputsApi(projectId, inputs),
+    onSuccess: () => qc.invalidateQueries({ queryKey: clientProposalKey(projectId) }),
+  });
+}
+
+/** Mark a finished proposal as "Sent to Client". */
+export function useSendToClient(projectId: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: () => sendToClientApi(projectId),
     onSuccess: () => qc.invalidateQueries({ queryKey: clientProposalKey(projectId) }),
   });
 }

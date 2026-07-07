@@ -63,6 +63,10 @@ export interface ClientProposal {
   /** Admin-entered fields the proposal was (or will be) generated with. */
   inputs?: ProposalInputs;
   updatedAt: string | null;
+  /** Whether this proposal has been sent to the client via their portal. */
+  sentToClient: boolean;
+  /** ISO datetime when the proposal was sent to the client. */
+  sentAt: string | null;
 }
 
 /** Fetch the proposal's generated costed client proposal (and status). */
@@ -83,5 +87,11 @@ export async function generateClientProposalApi(
   inputs?: ProposalInputs,
 ): Promise<{ status: string }> {
   const { data } = await api.post(`/client-proposals/project/${projectId}/generate`, inputs ?? {});
+  return data;
+}
+
+/** Mark a finished proposal as "Sent to Client". */
+export async function sendToClientApi(projectId: string): Promise<ClientProposal> {
+  const { data } = await api.post(`/client-proposals/project/${projectId}/send`);
   return data;
 }

@@ -56,6 +56,8 @@ def init_db() -> None:
         conn.execute(text('ALTER TABLE client_profiles ADD COLUMN IF NOT EXISTS "accessToken" VARCHAR'))
         conn.execute(text("ALTER TABLE client_profiles ADD COLUMN IF NOT EXISTS \"clientType\" VARCHAR DEFAULT 'Temporary'"))
         conn.execute(text('ALTER TABLE client_proposals ADD COLUMN IF NOT EXISTS "inputs" JSONB'))
+        conn.execute(text('ALTER TABLE client_proposals ADD COLUMN IF NOT EXISTS "sentToClient" BOOLEAN DEFAULT FALSE'))
+        conn.execute(text('ALTER TABLE client_proposals ADD COLUMN IF NOT EXISTS "sentAt" VARCHAR'))
         conn.execute(text('ALTER TABLE document_comments ADD COLUMN IF NOT EXISTS "anchorText" TEXT'))
         conn.execute(text('ALTER TABLE document_comments ADD COLUMN IF NOT EXISTS "anchorStart" INTEGER'))
         conn.execute(text('ALTER TABLE document_comments ADD COLUMN IF NOT EXISTS "anchorLength" INTEGER'))
