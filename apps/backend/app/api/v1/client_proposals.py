@@ -1,6 +1,7 @@
 import os
+from typing import Optional
 
-from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException
+from fastapi import APIRouter, BackgroundTasks, Body, Depends, HTTPException
 
 from app.services import project_service, client_proposal_service
 from app.api.v1.deps import get_current_user
@@ -19,18 +20,40 @@ async def get_client_proposal(project_id: str, _=Depends(get_current_user)):
     return client_proposal_service.get_proposal(project_id)
 
 
+@router.put("/project/{project_id}/inputs")
+async def save_proposal_inputs(
+    project_id: str,
+    inputs: dict = Body(default={}),
+    current_user=Depends(get_current_user),
+):
+    """Save the admin-entered proposal fields (client address, attention,
+    reference, date, discount, notes, …) without generating."""
+    if current_user.get("role") == "Client View":
+        raise HTTPException(status_code=403, detail="Clients cannot edit the proposal.")
+    if not project_service.get_project(project_id):
+        raise HTTPException(status_code=404, detail="Proposal not found")
+    return client_proposal_service.save_inputs(project_id, inputs or {})
+
+
 @router.post("/project/{project_id}/generate")
 async def generate_client_proposal(
-    project_id: str, background: BackgroundTasks, current_user=Depends(get_current_user),
+    project_id: str,
+    background: BackgroundTasks,
+    inputs: Optional[dict] = Body(default=None),
+    current_user=Depends(get_current_user),
 ):
-    """Queue AI generation of the costed client proposal (background) and return
-    immediately. The client polls GET /project/{id} for progress + result."""
+    """Save any admin-entered fields, then queue AI generation of the costed client
+    proposal (background) and return immediately. The client polls GET /project/{id}
+    for progress + result."""
     if current_user.get("role") == "Client View":
         raise HTTPException(status_code=403, detail="Clients cannot generate the proposal.")
     if not os.getenv("ANTHROPIC_API_KEY"):
         raise HTTPException(status_code=503, detail=_NOT_CONFIGURED)
     if not project_service.get_project(project_id):
         raise HTTPException(status_code=404, detail="Proposal not found")
+
+    if inputs:
+        client_proposal_service.save_inputs(project_id, inputs)
 
     if client_proposal_service.get_proposal(project_id).get("status") == "running":
         return {"status": "running"}

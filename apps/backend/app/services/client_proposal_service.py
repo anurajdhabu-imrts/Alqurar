@@ -56,12 +56,73 @@ def mark_running(project_id: str) -> None:
     _set(project_id, status="running", error=None)
 
 
+def save_inputs(project_id: str, inputs: Dict) -> Dict:
+    """Store the admin-entered proposal fields (merged) and return the row."""
+    with SessionLocal() as db:
+        row = db.get(ClientProposal, project_id)
+        if not row:
+            row = ClientProposal(projectId=project_id, createdAt=_now())
+            db.add(row)
+        merged = dict(row.inputs or {})
+        merged.update({k: v for k, v in (inputs or {}).items()})
+        row.inputs = merged
+        row.updatedAt = _now()
+        db.commit()
+        return row.to_dict()
+
+
+def _to_number(v) -> float:
+    """Parse an admin-entered amount ("1,200", "OMR 400", "") to a float."""
+    import re
+    s = re.sub(r"[^0-9.\-]", "", str(v or ""))
+    try:
+        return float(s) if s not in ("", "-", ".") else 0.0
+    except ValueError:
+        return 0.0
+
+
+def _apply_admin_commercials(content: dict, inputs: dict) -> dict:
+    """When the admin has priced the line items, use them verbatim as the costing
+    (so the fees are exact, not AI-invented) and recompute the net total after any
+    special discount."""
+    items = (inputs or {}).get("lineItems") or []
+    priced = [
+        {
+            "item": str(it.get("item", "")).strip(),
+            "description": str(it.get("description", "")).strip(),
+            "timeline": str(it.get("timeline", "")).strip(),
+            "amount": _to_number(it.get("amount")),
+        }
+        for it in items
+        if str(it.get("item", "")).strip() and str(it.get("amount", "")).strip()
+    ]
+    if not priced:
+        return content
+
+    costing = list(priced)
+    total = sum(c["amount"] for c in priced)
+    discount = _to_number((inputs or {}).get("discount"))
+    if discount > 0:
+        costing.append(
+            {"item": "Less special discount", "description": "", "timeline": "", "amount": -discount}
+        )
+        total -= discount
+
+    content = dict(content)
+    content["costing"] = costing
+    content["total"] = total
+    return content
+
+
 def _load(project_id: str):
-    """Blocking: gather proposal record, events and document names (in a thread)."""
+    """Blocking: gather proposal record, events, document names and admin inputs."""
     project = project_service.get_project(project_id)
     events = delay_event_service.list_by_project(project_id)
     doc_names = [d.get("name", "") for d in document_service.list_by_project(project_id)]
-    return project, events, doc_names
+    with SessionLocal() as db:
+        row = db.get(ClientProposal, project_id)
+        inputs = dict(row.inputs) if row and row.inputs else {}
+    return project, events, doc_names, inputs
 
 
 async def run_generation(project_id: str) -> None:
@@ -72,14 +133,16 @@ async def run_generation(project_id: str) -> None:
             if not os.getenv("ANTHROPIC_API_KEY"):
                 _set(project_id, status="failed", error=_NOT_CONFIGURED)
                 return
-            project, events, doc_names = await asyncio.to_thread(_load, project_id)
+            project, events, doc_names, inputs = await asyncio.to_thread(_load, project_id)
             if not project:
                 _set(project_id, status="failed", error="Proposal not found.")
                 return
 
             content = await generate_client_proposal(
-                project=project, events=events, document_names=doc_names
+                project=project, events=events, document_names=doc_names, inputs=inputs
             )
+            # Admin-entered prices are authoritative — override the AI's costing.
+            content = _apply_admin_commercials(content, inputs)
             _set(project_id, content=content, model=MODEL, status="done", error=None)
         except anthropic.AuthenticationError:
             _set(project_id, status="failed", error=_NOT_CONFIGURED)
