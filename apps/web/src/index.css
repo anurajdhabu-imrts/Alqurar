@@ -15,7 +15,29 @@
   --color-navy-900: #0a2540;
   --color-navy-950: #061629;
 
-  /* ── Accent: Amber ───────────────────────────────────── */
+  /* ── Brand accent: Emerald (from the Al Qarar mark) ──── */
+  --color-emerald-50: #ecfaf2;
+  --color-emerald-100: #d1f3df;
+  --color-emerald-200: #a6e6c1;
+  --color-emerald-300: #6ed49c;
+  --color-emerald-400: #38bd78;
+  --color-emerald-500: #1fa462;
+  --color-emerald-600: #158650;
+  --color-emerald-700: #136a41;
+  --color-emerald-800: #115436;
+  --color-emerald-900: #0d3f29;
+
+  /* ── Secondary accent: Gold / Bronze (the Q ring) ────── */
+  --color-gold-50: #faf6ec;
+  --color-gold-100: #f2e6c8;
+  --color-gold-200: #e6cd94;
+  --color-gold-300: #d6b062;
+  --color-gold-400: #c2933f;
+  --color-gold-500: #a97c2f;
+  --color-gold-600: #8a6323;
+  --color-gold-700: #6b4c1e;
+
+  /* ── Amber (kept for existing warning/accent usage) ──── */
   --color-amber-50: #fef8ed;
   --color-amber-100: #fcecc9;
   --color-amber-200: #f9d98e;
@@ -28,8 +50,10 @@
   /* ── Semantic aliases ────────────────────────────────── */
   --color-primary: var(--color-navy-900);
   --color-primary-hover: var(--color-navy-700);
-  --color-accent: var(--color-amber-500);
-  --color-accent-hover: var(--color-amber-600);
+  /* Brand accent is emerald green; gold is the secondary accent. */
+  --color-accent: var(--color-emerald-500);
+  --color-accent-hover: var(--color-emerald-600);
+  --color-gold: var(--color-gold-500);
 
   --color-surface: #f5f8fc;
   --color-card: #ffffff;
@@ -94,7 +118,7 @@ h1, h2, h3, h4 {
 }
 
 ::selection {
-  background-color: var(--color-amber-100);
+  background-color: var(--color-emerald-100);
   color: var(--color-navy-900);
 }
 
@@ -128,12 +152,21 @@ h1, h2, h3, h4 {
   }
   .btn-primary:hover:not(:disabled) { background-color: var(--color-primary-hover); }
 
-  .btn-accent {
-    background: linear-gradient(180deg, var(--color-amber-400), var(--color-amber-500));
-    color: #2a1c04;
-    box-shadow: var(--shadow-glow);
+  /* Secondary accent — gold/bronze */
+  .btn-accent, .btn-gold {
+    background: linear-gradient(180deg, var(--color-gold-400), var(--color-gold-500));
+    color: #ffffff;
+    box-shadow: 0 6px 18px -6px rgba(169, 124, 47, 0.4);
   }
-  .btn-accent:hover:not(:disabled) { filter: brightness(1.04); }
+  .btn-accent:hover:not(:disabled), .btn-gold:hover:not(:disabled) { filter: brightness(1.05); }
+
+  /* Success — brand emerald green */
+  .btn-success {
+    background: linear-gradient(180deg, var(--color-emerald-400), var(--color-emerald-600));
+    color: #ffffff;
+    box-shadow: 0 6px 18px -6px rgba(24, 138, 80, 0.45);
+  }
+  .btn-success:hover:not(:disabled) { filter: brightness(1.05); }
 
   .btn-outline { background-color: #fff; border: 1px solid var(--color-border-strong); color: var(--color-ink); }
   .btn-outline:hover:not(:disabled) { border-color: var(--color-navy-300); color: var(--color-primary); box-shadow: var(--shadow-xs); }
@@ -170,9 +203,10 @@ h1, h2, h3, h4 {
     transition: border-color 0.15s ease, box-shadow 0.15s ease;
   }
   .input::placeholder { color: var(--color-faint); }
+  /* Focus state uses the brand emerald green. */
   .input:focus {
-    border-color: var(--color-navy-500);
-    box-shadow: 0 0 0 3.5px rgba(47, 94, 152, 0.13);
+    border-color: var(--color-emerald-500);
+    box-shadow: 0 0 0 3.5px rgba(31, 164, 98, 0.16);
   }
 
   .label {
@@ -193,6 +227,8 @@ h1, h2, h3, h4 {
     font-weight: 600;
     line-height: 1.5;
     white-space: nowrap;
+    /* Faint tinted ring matching the pill's colour — premium status-pill look. */
+    box-shadow: inset 0 0 0 1px color-mix(in srgb, currentColor 16%, transparent);
   }
 
   /* Section/page surface accents */
@@ -202,6 +238,37 @@ h1, h2, h3, h4 {
     background-clip: text;
     color: transparent;
   }
+}
+
+/* ── Motion: subtle page/card entrance + loading skeletons ── */
+@keyframes aq-fade-in {
+  from { opacity: 0; transform: translateY(6px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+@keyframes aq-shimmer {
+  0% { background-position: 100% 0; }
+  100% { background-position: 0 0; }
+}
+
+.animate-in {
+  animation: aq-fade-in 0.4s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+.skeleton {
+  background: linear-gradient(
+    90deg,
+    var(--color-border) 25%,
+    #f3f7fc 37%,
+    var(--color-border) 63%
+  );
+  background-size: 400% 100%;
+  animation: aq-shimmer 1.4s ease infinite;
+  border-radius: var(--radius);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .animate-in { animation: none; }
+  .skeleton { animation: none; }
 }
 
 /* ── In-page document viewer (Word/Excel converted to HTML) ── */

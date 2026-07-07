@@ -5,8 +5,8 @@ import { apiErrorMessage } from "@/api/client";
 import { useAuthStore } from "@/store/authStore";
 
 const features = [
-  { icon: Gavel, text: "EOT claims drafted with clause-cited entitlement & causation" },
-  { icon: FileSearch, text: "Contract risk, obligations and notice deadlines tracked automatically" },
+  { icon: Gavel, text: "Delay events extracted from your documents with AI, clause-cited" },
+  { icon: FileSearch, text: "Each project's contract clauses mapped to its entitlement basis" },
   { icon: ShieldCheck, text: "Every AI output traceable to source — arbitration-ready" },
 ];
 
@@ -44,16 +44,16 @@ export function LoginPage() {
             backgroundSize: "22px 22px",
           }}
         />
-        <div className="absolute -top-24 -right-24 size-96 rounded-full bg-navy-600/30 blur-3xl" />
-        <div className="absolute bottom-0 -left-20 size-80 rounded-full bg-amber-500/15 blur-3xl" />
+        <div className="absolute -top-24 -right-24 size-96 rounded-full bg-emerald-500/15 blur-3xl" />
+        <div className="absolute bottom-0 -left-20 size-80 rounded-full bg-gold-500/15 blur-3xl" />
 
         <div className="relative flex items-center gap-3">
-          <div className="size-11 rounded-xl bg-amber-500 text-navy-950 grid place-items-center font-extrabold font-display text-lg">
-            AQ
+          <div className="size-11 rounded-xl bg-linear-to-br from-navy-600 to-navy-800 ring-1 ring-inset ring-gold-400/40 grid place-items-center font-extrabold font-display text-lg">
+            <span className="bg-linear-to-br from-emerald-300 to-white bg-clip-text text-transparent">AQ</span>
           </div>
           <div>
             <p className="font-bold font-display text-lg leading-tight">Al Qarar</p>
-            <p className="text-sm text-navy-300">Management Solutions</p>
+            <p className="text-sm text-emerald-300/80">Analyse. Advise. Achieve.</p>
           </div>
         </div>
 
@@ -62,14 +62,14 @@ export function LoginPage() {
             AI-powered intelligence for construction claims &amp; disputes.
           </h2>
           <p className="mt-4 text-navy-200">
-            Purpose-built for FIDIC &amp; NEC contracts — from EOT entitlement to contract
-            lifecycle management and dispute resolution.
+            Purpose-built for FIDIC &amp; NEC contracts — from delay-event extraction and
+            clause libraries to costed client proposals.
           </p>
           <ul className="mt-8 space-y-4">
             {features.map((f) => (
               <li key={f.text} className="flex items-start gap-3">
                 <span className="size-9 shrink-0 rounded-lg bg-white/10 ring-1 ring-white/15 grid place-items-center backdrop-blur-sm">
-                  <f.icon className="size-[18px] text-amber-400" strokeWidth={2} />
+                  <f.icon className="size-[18px] text-emerald-400" strokeWidth={2} />
                 </span>
                 <span className="text-sm text-navy-100 pt-1.5">{f.text}</span>
               </li>
@@ -86,7 +86,7 @@ export function LoginPage() {
       <div className="flex items-center justify-center p-6 sm:p-12">
         <div className="w-full max-w-sm">
           <div className="lg:hidden flex items-center gap-3 mb-8">
-            <div className="size-10 rounded-xl bg-navy-900 text-amber-400 grid place-items-center font-extrabold font-display">
+            <div className="size-10 rounded-xl bg-linear-to-br from-navy-700 to-navy-900 ring-1 ring-inset ring-gold-400/40 text-emerald-300 grid place-items-center font-extrabold font-display">
               AQ
             </div>
             <p className="font-bold font-display text-lg">Al Qarar</p>

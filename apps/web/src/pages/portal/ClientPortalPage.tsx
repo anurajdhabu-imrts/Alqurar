@@ -42,14 +42,14 @@ export function ClientPortalPage() {
 
   return (
     <div className="min-h-screen bg-navy-50/40">
-      <header className="bg-card border-b border-border">
+      <header className="bg-linear-to-r from-navy-900 to-navy-950 border-b border-white/5">
         <div className="max-w-3xl mx-auto px-5 h-16 flex items-center gap-2.5">
-          <div className="size-9 shrink-0 rounded-xl bg-linear-to-br from-navy-800 to-navy-950 text-amber-400 grid place-items-center font-extrabold font-display">
-            AQ
+          <div className="size-9 shrink-0 rounded-xl bg-white/10 ring-1 ring-inset ring-gold-400/40 grid place-items-center font-extrabold font-display">
+            <span className="bg-linear-to-br from-emerald-300 to-white bg-clip-text text-transparent">AQ</span>
           </div>
           <div className="leading-tight">
-            <p className="font-bold font-display text-[15px] text-navy-900">Al Qarar</p>
-            <p className="text-[11px] text-faint">Secure document upload</p>
+            <p className="font-bold font-display text-[15px] text-white">Al Qarar</p>
+            <p className="text-[11px] text-emerald-300/80">Secure document upload</p>
           </div>
         </div>
       </header>
