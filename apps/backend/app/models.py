@@ -321,6 +321,10 @@ class ClientProposal(Base):
     model: Mapped[Optional[str]] = mapped_column(String, nullable=True)
     status: Mapped[str] = mapped_column(String, default="")
     error: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    # Admin-entered fields that steer generation (client address, attention,
+    # reference, date, discount, special notes, …). Kept so the form persists and
+    # the same inputs are reused on regeneration.
+    inputs: Mapped[Optional[dict]] = mapped_column(JSON, nullable=True)
     createdAt: Mapped[Optional[str]] = mapped_column(String, nullable=True)
     updatedAt: Mapped[Optional[str]] = mapped_column(String, nullable=True)
 
@@ -331,6 +335,7 @@ class ClientProposal(Base):
             "model": self.model,
             "status": self.status or "",
             "error": self.error,
+            "inputs": self.inputs or {},
             "updatedAt": self.updatedAt,
         }
 

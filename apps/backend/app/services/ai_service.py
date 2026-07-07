@@ -8,6 +8,7 @@ how it relates to an Extension-of-Time claim).
 import base64
 import json
 import os
+from datetime import datetime, timezone
 from functools import lru_cache
 from pathlib import Path
 
@@ -582,41 +583,117 @@ async def generate_eot_claim(
 # EOT / delay-claim work, with a costing breakdown derived from the identified
 # delay events. This is NOT the EOT claim itself — it is the offer to the client.
 
+# Al Qarar Management Solutions (AQMS) firm profile — the standing facts that
+# every proposal is built on, drawn from AQMS's real "Claims Support Services"
+# proposals so generated documents read in the firm's house style. The visual
+# template is applied separately; this drives the CONTENT/structure only.
+_AQMS_PROFILE = (
+    "ABOUT THE FIRM — use these standing facts (do not contradict them):\n"
+    "- The firm is Al Qarar Management Solutions (AQMS), a specialist provider of "
+    "project-management, commercial and claims-advisory services: Contracts & "
+    "Commercial Management, Project Planning, Monitoring & Controls, Forensic Delay "
+    "Analysis, and Quantum Assessment, plus arbitration and expert-witness support.\n"
+    "- Core values: Respect | Trust | Continual Improvement | Service.\n"
+    "- Track record: over the past several years AQMS has supported 60+ clients and "
+    "160+ Extension of Time (EOT) and quantum claims across the GCC, India and other "
+    "regions, in buildings, infrastructure and mixed-use developments, for government "
+    "entities, private developers and international EPC contractors.\n"
+    "- Core services (reference list): Extension of Time Claims; Preparation of "
+    "Commercial Claims; Independent Technical Evaluation; Tendering Support & "
+    "Estimation; Contracts and Commercial Management; Forensic Planning and Delay "
+    "Analysis; Quantum Claims (Cost/Damages); Arbitration Support and Expert Witness; "
+    "Claims Documentation (Pleadings & Statements); Business Improvement and "
+    "Transformation.\n"
+    "- Standard team to present in 'Team Handling the Assignment': "
+    "Kariyadan Nausher (PMP, ACIArb — Principal Consultant & Technical Expert; 3+ "
+    "decades in Oman; Member, Society of Construction Law UK; registered Technical "
+    "Expert with the Oman Commercial Arbitration Center); Hemanth Sarvabhotla "
+    "(Director; 20+ years delivering large multi-disciplinary Design & Build "
+    "contracts); Vamsi Krishna Valluri (MCIArb, RICS Expert Witness — Delay & Quantum, "
+    "CPM/windows/time-impact analysis); Mohamed Ismail (PMP — Consultant, Planning & "
+    "Controls); Ajmal Aboo (PMP — Consultant, Planning & Controls). Note the team is "
+    "supported by other AQMS experts on a need basis.\n"
+    "- The cover letter is signed off by 'Hemanth Sarvabhotla, Director'.\n"
+    "- Governing law is the Sultanate of Oman; all fees are exclusive of VAT and any "
+    "other applicable taxes."
+)
+
 _PROPOSAL_SYSTEM_PROMPT = (
-    "You are a commercial lead at a construction claims consultancy (Al Qarar) "
-    "preparing a professional PROPOSAL to a prospective CLIENT, offering to prepare "
-    "and pursue their Extension of Time (EOT) / delay-and-disruption claim. You are "
-    "given the project/proposal details, the register of delay events identified from "
-    "the client's documents, and the list of supporting documents.\n\n"
-    "Write a persuasive but factual, submission-ready proposal that scopes the work "
-    "off the identified delay events and prices it. Only rely on the information "
-    "provided — do NOT invent clause numbers, dates, parties or figures.\n\n"
-    "Produce these sections (in order) in 'sections':\n"
-    "1. Introduction — who we are and the purpose of this proposal.\n"
-    "2. Understanding of the Matter — summarise the project and the delay situation "
-    "as evidenced by the events and documents.\n"
-    "3. Identified Delay Events — a concise summary of the events found (name + one "
-    "line each) that this engagement would address.\n"
-    "4. Scope of Services — the work we will perform (document review, delay analysis, "
-    "entitlement assessment, claim drafting, negotiation support, etc.).\n"
-    "5. Approach & Methodology — how we will deliver it, aligned to the contract "
-    "standard where known.\n"
-    "6. Commercial Terms — fee basis, assumptions and exclusions, and payment terms.\n\n"
-    "Then produce a 'costing' breakdown: line items for the professional services, "
-    "each with a short 'item' name, a one-line 'description', and an 'amount' (a "
-    "number in the project currency). Scale the effort and fees sensibly to the "
-    "number and complexity of the delay events. Set 'currency' to the project's "
-    "currency and 'total' to the sum of the line-item amounts.\n\n"
-    "Each section 'body' is plain text; use blank lines between paragraphs and '- ' "
-    "for bullets. If the events register is empty, still produce a credible scoping "
-    "proposal for an initial assessment, and say the scope will be refined once the "
-    "documents are reviewed."
+    "You are the commercial lead at Al Qarar Management Solutions (AQMS) preparing a "
+    "formal, submission-ready 'PROPOSAL FOR CLAIMS SUPPORT SERVICES' to a prospective "
+    "CLIENT, offering to prepare and pursue their Extension of Time (EOT) and quantum / "
+    "delay-and-disruption claim. You are given the project details, the register of "
+    "delay events our AI has IDENTIFIED from the client's uploaded documents, and the "
+    "list of those documents.\n\n"
+    + _AQMS_PROFILE + "\n\n"
+    "GROUND RULES:\n"
+    "- The proposal must be built around the SPECIFIC delay events identified — name "
+    "them, summarise them, and scope and price the work against them. This is what "
+    "makes the proposal bespoke to the client.\n"
+    "- Be factual and professional. Only rely on the firm profile above and the "
+    "information provided; do NOT invent clause numbers, dates, parties or figures "
+    "that are not given.\n"
+    "- Address the client by their company name (the Employer/Client provided).\n\n"
+    "Produce these narrative sections, in this order, in 'sections' (heading + body):\n"
+    "1. Cover Letter — addressed to the client company, with a subject line 'Proposal "
+    "for Claims Support Services', a short covering note (pleased to submit our "
+    "proposal for the identified matter), and a sign-off 'Yours sincerely, Hemanth "
+    "Sarvabhotla, Director'.\n"
+    "2. Background & Introduction — the client's need for claims support on this "
+    "project, a short AQMS introduction and track record, and the core-services list.\n"
+    "3. Our Approach — the systematic claims approach (understanding the contractual "
+    "framework; compilation & review of documents; in-depth study of the delay events; "
+    "EOT claim preparation; quantification of damages; collaboration with experts/legal "
+    "counsel; drafting the Statement of Claim; supporting documentation; final review "
+    "and submission).\n"
+    "4. Scope of Work & Methodology — our understanding of the scope tied to the "
+    "identified delay events (contractual strategy; EOT and quantum claim; dispute-"
+    "resolution support), and the methodology (initial data collection & review; delay "
+    "analysis using Time Impact Analysis / As-Planned vs As-Built / windows analysis; "
+    "quantum analysis; report preparation; collaboration & review; hearing "
+    "preparation).\n"
+    "5. Team Handling the Assignment — the standard AQMS team above, each with a short "
+    "bio.\n"
+    "6. Terms & Conditions — the standard headings: Service Assignment; Payment; "
+    "Taxation (exclusive of VAT); Conflict of Interest; Liability (limited to fees "
+    "paid); Governing Law (Sultanate of Oman); Confidentiality; Indemnification.\n\n"
+    "COMMERCIAL PROPOSAL (returned as structured fields, not prose):\n"
+    "- 'costing': the line items for the professional services, grouped sensibly by "
+    "package/deliverable tied to the identified events (e.g. document review & claim "
+    "strategy; EOT claim & quantum report per package). Each line has a short 'item', "
+    "a one-line 'description', an 'timeline' (indicative, e.g. 'Week 1-3' — empty "
+    "string if not applicable) and an 'amount' (a number in the project currency). "
+    "Scale the effort and fees sensibly to the number and complexity of the identified "
+    "delay events.\n"
+    "- 'currency': the project currency. 'total': the sum of the line-item amounts.\n"
+    "- 'paymentTerms': 3-5 short bullet strings for the payment schedule (e.g. advance "
+    "on signing, interim on draft submission, balance on final submission), each "
+    "payable within 30 days of invoice, exclusive of VAT.\n"
+    "- 'reference': an AQMS proposal reference in the form 'AQMS/Proposal/<yy>/<nn>'.\n"
+    "- 'date': the proposal date provided.\n\n"
+    "ADMIN-PROVIDED FIELDS: the user may supply specific fields (client company, "
+    "attention line, client address, subject, reference, date, signatory, a special "
+    "discount, a fee basis, and free-form instructions). When provided, USE THEM "
+    "EXACTLY — they take precedence over anything you would otherwise draft:\n"
+    "- Put the client company, attention line and address at the top of the Cover "
+    "Letter and use the given subject, reference and date.\n"
+    "- Sign the Cover Letter off with the given signatory.\n"
+    "- If a special discount is given, add it to 'costing' as a final line named 'Less "
+    "special discount' with a NEGATIVE amount, and make 'total' the net (line items "
+    "minus discount).\n"
+    "- Follow any additional instructions/fee basis given.\n\n"
+    "Each section 'body' is plain text; use blank lines between paragraphs and '- ' for "
+    "bullets. If the identified-events register is empty, still produce a credible "
+    "scoping proposal for an initial claims assessment and state that the scope and "
+    "fees will be refined once the documents are reviewed."
 )
 
 _PROPOSAL_OUTPUT_SCHEMA = {
     "type": "object",
     "properties": {
         "title": {"type": "string"},
+        "reference": {"type": "string"},
+        "date": {"type": "string"},
         "sections": {
             "type": "array",
             "items": {
@@ -636,18 +713,65 @@ _PROPOSAL_OUTPUT_SCHEMA = {
                 "properties": {
                     "item": {"type": "string"},
                     "description": {"type": "string"},
+                    "timeline": {"type": "string"},
                     "amount": {"type": "number"},
                 },
-                "required": ["item", "description", "amount"],
+                "required": ["item", "description", "timeline", "amount"],
                 "additionalProperties": False,
             },
         },
         "currency": {"type": "string"},
         "total": {"type": "number"},
+        "paymentTerms": {"type": "array", "items": {"type": "string"}},
     },
-    "required": ["title", "sections", "costing", "currency", "total"],
+    "required": [
+        "title", "reference", "date", "sections", "costing", "currency",
+        "total", "paymentTerms",
+    ],
     "additionalProperties": False,
 }
+
+
+# Admin-entered fields (key → human label) woven into the proposal prompt.
+_INPUT_LABELS = {
+    "clientCompany": "Client company (addressee)",
+    "attention": "Attention (contact & designation)",
+    "clientAddress": "Client address",
+    "subject": "Subject line",
+    "reference": "Proposal reference",
+    "date": "Proposal date",
+    "signatory": "Signatory (name & title)",
+    "discount": "Special discount (amount to deduct)",
+    "feeBasis": "Fee basis / commercial notes",
+    "notes": "Additional instructions",
+}
+
+
+def _admin_block(inputs: dict) -> str:
+    """Render the admin-provided fields for the prompt, skipping blanks."""
+    lines = []
+    for key, label in _INPUT_LABELS.items():
+        val = (inputs or {}).get(key)
+        if val is None or str(val).strip() == "":
+            continue
+        lines.append(f"- {label}: {val}")
+    items = (inputs or {}).get("lineItems") or []
+    priced = [i for i in items if str(i.get("item", "")).strip() and str(i.get("amount", "")).strip()]
+    if priced:
+        lines.append(
+            "- Commercial line items (USE THESE EXACT items, timelines and amounts in "
+            "the Commercial Proposal — do NOT invent your own fees):"
+        )
+        for it in priced:
+            tl = str(it.get("timeline", "")).strip()
+            desc = str(it.get("description", "")).strip()
+            bits = [f"  • {it['item']} — amount {it['amount']}"]
+            if tl:
+                bits.append(f"timeline {tl}")
+            if desc:
+                bits.append(desc)
+            lines.append(" — ".join(bits))
+    return "\n".join(lines)
 
 
 async def generate_client_proposal(
@@ -655,28 +779,43 @@ async def generate_client_proposal(
     project: dict,
     events: list[dict],
     document_names: list[str],
+    inputs: dict | None = None,
 ) -> dict:
-    """Draft the costed client proposal. Returns
-    {title, sections:[{heading, body}], costing:[{item, description, amount}],
-     currency, total}."""
+    """Draft the costed client proposal in AQMS house style. Returns
+    {title, reference, date, sections:[{heading, body}],
+     costing:[{item, description, timeline, amount}], currency, total,
+     paymentTerms:[...]}. `inputs` holds admin-entered fields that override
+     the AI's defaults (client address, attention, reference, date, discount, …)."""
     p = project or {}
+    inputs = inputs or {}
     currency = p.get("currency") or "OMR"
+    today = str(inputs.get("date") or "").strip() or datetime.now(timezone.utc).strftime("%d %B %Y")
     header = [
         f"Proposal for: {p.get('name', '')}",
-        f"Reference: {p.get('code', '')}",
+        f"Client / Employer: {p.get('employer', '')}",
+        f"Reference code: {p.get('code', '')}",
         f"Contract standard: {p.get('standard', '')}",
-        f"Employer: {p.get('employer', '')}",
         f"Engineer: {p.get('engineer', '')}",
         f"Contractor: {p.get('contractor', '')}",
         f"Location: {p.get('location', '')}",
         f"Currency: {currency}",
+        f"Proposal date: {today}",
     ]
     docs = "\n".join(f"- {n}" for n in document_names) or "(none)"
+    admin = _admin_block(inputs)
+    admin_section = (
+        "\n\nADMIN-PROVIDED FIELDS (use these exactly; they override your defaults)\n" + admin
+        if admin
+        else ""
+    )
     user_content = (
         "PROPOSAL DETAILS\n" + "\n".join(header)
-        + "\n\nIDENTIFIED DELAY EVENTS\n" + _events_brief(events)
+        + admin_section
+        + "\n\nDELAY EVENTS IDENTIFIED BY AI (build the proposal around these)\n"
+        + _events_brief(events)
         + "\n\nSUPPORTING DOCUMENTS\n" + docs
-        + f"\n\nDraft the costed client proposal now. Price all amounts in {currency}."
+        + f"\n\nDraft the AQMS Claims Support Services proposal now. Price all amounts "
+        f"in {currency} and date it {today}."
     )
 
     async with _client().messages.stream(
