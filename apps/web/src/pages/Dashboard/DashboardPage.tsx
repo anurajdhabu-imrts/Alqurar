@@ -1,22 +1,22 @@
 import { Link } from "react-router-dom";
-import { AlertTriangle, Building2, FileSignature, FolderKanban, ListChecks, Loader2, Plus } from "lucide-react";
+import { AlertTriangle, Building2, FileSignature, FolderKanban, ListChecks, Plus } from "lucide-react";
 import { Card, CardHeader } from "@/components/ui/Card";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { StatCard } from "@/components/ui/StatCard";
 import { apiErrorMessage } from "@/api/client";
 import { useDashboardSummary } from "@/hooks/useDashboard";
 
-// Presentation-only colour maps (not data). Unknown statuses fall back to grey.
+// Presentation-only colour maps (Al Qarar brand). Unknown statuses fall back to grey.
 const PROJECT_STATUS_COLORS: Record<string, string> = {
-  Active: "#2c5e94",
-  Closeout: "#d97706",
-  Completed: "#1e8449",
+  Active: "#1f4a7d", // navy
+  Closeout: "#a97c2f", // gold
+  Completed: "#1fa462", // emerald
 };
 const DELAY_STATUS_COLORS: Record<string, string> = {
-  Pending: "#d97706",
-  Confirmed: "#1e8449",
+  Pending: "#c2933f", // gold
+  Confirmed: "#1fa462", // emerald
   Edited: "#2563eb",
-  Merged: "#2c5e94",
+  Merged: "#1f4a7d", // navy
   Rejected: "#c0392b",
 };
 const FALLBACK_COLOR = "#94a3b8";
@@ -134,9 +134,7 @@ export function DashboardPage() {
       />
 
       {isLoading ? (
-        <Card className="p-12 text-center text-sm text-muted inline-flex items-center justify-center gap-2 w-full">
-          <Loader2 className="size-4 animate-spin" /> Loading dashboard…
-        </Card>
+        <DashboardSkeleton />
       ) : isError || !data ? (
         <Card className="p-10 text-center">
           <span className="size-12 mx-auto rounded-xl bg-error-bg text-error grid place-items-center">
@@ -146,32 +144,58 @@ export function DashboardPage() {
           <p className="mt-1 text-sm text-muted">{apiErrorMessage(error, "Please try again.")}</p>
         </Card>
       ) : (
-        <>
+        <div className="space-y-4 animate-in">
           {/* KPI row — live counts from the existing modules */}
           <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
             <StatCard label="Clients" value={data.clients} sub="Registered clients" icon={Building2} tone="navy" />
-            <StatCard label="Projects" value={data.projects} sub="Active engagements" icon={FolderKanban} tone="success" />
-            <StatCard label="Proposals" value={data.proposals} sub="In the proposal stage" icon={FileSignature} tone="amber" />
-            <StatCard label="Delay Events" value={data.delayEvents} sub="Across all projects" icon={ListChecks} tone="warning" />
+            <StatCard label="Projects" value={data.projects} sub="Active engagements" icon={FolderKanban} tone="emerald" />
+            <StatCard label="Proposals" value={data.proposals} sub="In the proposal stage" icon={FileSignature} tone="gold" />
+            <StatCard label="Delay Events" value={data.delayEvents} sub="Across all projects" icon={ListChecks} tone="amber" />
           </div>
 
           {/* Status breakdowns */}
-          <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 mt-4">
-            <Card>
+          <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+            <Card className="card-hover">
               <CardHeader title="Projects by status" />
               <StatusDonut data={data.projectsByStatus} colors={PROJECT_STATUS_COLORS} unit="projects" />
             </Card>
-            <Card>
+            <Card className="card-hover">
               <CardHeader title="Delay events by status" />
               <StatusBars data={data.delayEventsByStatus} colors={DELAY_STATUS_COLORS} unit="delay events" />
             </Card>
-            <Card>
+            <Card className="card-hover">
               <CardHeader title="Proposals by status" />
               <StatusDonut data={data.proposalsByStatus} colors={PROJECT_STATUS_COLORS} unit="proposals" />
             </Card>
           </div>
-        </>
+        </div>
       )}
     </>
+  );
+}
+
+/** Skeleton placeholders shown while the summary loads. */
+function DashboardSkeleton() {
+  return (
+    <div className="space-y-4">
+      <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
+        {Array.from({ length: 4 }).map((_, i) => (
+          <div key={i} className="card p-5">
+            <div className="skeleton size-11 rounded-xl" />
+            <div className="skeleton h-3.5 w-24 mt-4 rounded" />
+            <div className="skeleton h-7 w-16 mt-2 rounded" />
+            <div className="skeleton h-3 w-28 mt-3 rounded" />
+          </div>
+        ))}
+      </div>
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+        {Array.from({ length: 3 }).map((_, i) => (
+          <div key={i} className="card p-5">
+            <div className="skeleton h-4 w-32 rounded" />
+            <div className="skeleton h-[150px] w-full mt-5 rounded-lg" />
+          </div>
+        ))}
+      </div>
+    </div>
   );
 }

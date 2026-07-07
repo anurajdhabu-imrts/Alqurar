@@ -27,9 +27,12 @@ export function Topbar({
       </button>
 
       <div className="relative hidden sm:block w-full max-w-md">
-        <Search className="absolute left-3 top-1/2 -translate-y-1/2 size-4 text-faint" />
-        <input className="input pl-9 bg-surface border-transparent focus:bg-white" placeholder="Search claims, contracts, clauses…" />
-        <kbd className="absolute right-3 top-1/2 -translate-y-1/2 text-[10px] font-semibold text-faint bg-card border border-border rounded px-1.5 py-0.5">⌘K</kbd>
+        <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 size-4 text-faint" />
+        <input
+          className="input pl-10 rounded-full bg-surface border-transparent focus:bg-white"
+          placeholder="Search proposals, projects, clauses…"
+        />
+        <kbd className="absolute right-3 top-1/2 -translate-y-1/2 text-[10px] font-semibold text-faint bg-card border border-border rounded-md px-1.5 py-0.5">⌘K</kbd>
       </div>
 
       <div className="ml-auto flex items-center gap-1 sm:gap-2">

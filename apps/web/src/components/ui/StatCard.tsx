@@ -1,11 +1,14 @@
 import { ArrowDownRight, ArrowUpRight, type LucideIcon } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Sparkline } from "./Sparkline";
+import { AnimatedNumber } from "./AnimatedNumber";
 
-type Tone = "navy" | "amber" | "success" | "warning" | "error";
+type Tone = "navy" | "emerald" | "gold" | "amber" | "success" | "warning" | "error";
 
 const chipClasses: Record<Tone, string> = {
   navy: "bg-linear-to-br from-navy-600 to-navy-800 text-white shadow-navy",
+  emerald: "bg-linear-to-br from-emerald-400 to-emerald-600 text-white",
+  gold: "bg-linear-to-br from-gold-400 to-gold-600 text-white",
   amber: "bg-linear-to-br from-amber-400 to-amber-500 text-[#2a1c04] shadow-glow",
   success: "bg-linear-to-br from-[#23a866] to-[#16794d] text-white",
   warning: "bg-linear-to-br from-[#ea9a2b] to-[#c2700a] text-white",
@@ -14,6 +17,8 @@ const chipClasses: Record<Tone, string> = {
 
 const sparkColor: Record<Tone, string> = {
   navy: "#2f5e98",
+  emerald: "#1fa462",
+  gold: "#a97c2f",
   amber: "#e8920c",
   success: "#18794e",
   warning: "#c2700a",
@@ -63,7 +68,9 @@ export function StatCard({
 
       <p className="mt-4 text-sm font-medium text-muted">{label}</p>
       <div className="mt-1 flex items-end justify-between gap-2">
-        <p className="text-[26px] leading-none font-bold font-display text-ink tracking-tight">{value}</p>
+        <p className="text-[26px] leading-none font-bold font-display text-ink tracking-tight tabular-nums">
+          {typeof value === "number" ? <AnimatedNumber value={value} /> : value}
+        </p>
         {spark && <Sparkline data={spark} color={sparkColor[tone]} />}
       </div>
       {sub && <p className="mt-2.5 text-xs text-faint">{sub}</p>}
