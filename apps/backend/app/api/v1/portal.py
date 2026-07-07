@@ -125,6 +125,54 @@ async def portal_download(token: str, document_id: str):
     )
 
 
+@router.get("/{token}/proposal")
+async def portal_proposal(token: str):
+    """Return proposal metadata for the client's assigned proposal-kind projects
+    where the proposal has been sent."""
+    from app.services.client_proposal_service import get_proposal as get_client_proposal
+
+    profile = _resolve(token)
+    project_ids = project_ids_for_client(profile["userId"])
+    sent = []
+    for pid in project_ids:
+        proj = get_project(pid)
+        if not proj or proj.get("kind") != "proposal":
+            continue
+        prop = get_client_proposal(pid)
+        if not prop.get("sentToClient"):
+            continue
+        sent.append({
+            "projectId": pid,
+            "title": (prop.get("content") or {}).get("title") or proj.get("name", "Proposal"),
+            "projectName": proj.get("name", ""),
+            "date": (prop.get("content") or {}).get("date") or prop.get("updatedAt"),
+            "sentAt": prop.get("sentAt"),
+            "status": "sent",
+        })
+    return sent
+
+
+@router.get("/{token}/proposal/download")
+async def portal_proposal_download(token: str, projectId: str):
+    """Return the full proposal content + inputs as JSON so the portal page can
+    render the PDF client-side (same as the internal Download PDF button)."""
+    from app.services.client_proposal_service import get_proposal as get_client_proposal
+
+    profile = _resolve(token)
+    if projectId not in project_ids_for_client(profile["userId"]):
+        raise HTTPException(status_code=403, detail="This project isn't linked to your account.")
+    prop = get_client_proposal(projectId)
+    if not prop.get("sentToClient"):
+        raise HTTPException(status_code=404, detail="No proposal has been shared with you for this project.")
+    proj = get_project(projectId)
+    return {
+        "content": prop.get("content"),
+        "inputs": prop.get("inputs") or {},
+        "projectName": proj.get("name", "") if proj else "",
+        "currency": proj.get("currency", "OMR") if proj else "OMR",
+    }
+
+
 # ─────────────────────────────────────────────────────────────────────────────
 # DISABLED — email OTP + verified session (kept for future restore)
 #

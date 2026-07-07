@@ -1,11 +1,12 @@
 import { useMemo, useState, type MouseEvent } from "react";
 import { Link, useNavigate } from "react-router-dom";
-import { ArrowRight, Building2, FileSignature, Plus, Search, Trash2, UserPlus, Users } from "lucide-react";
+import { ArrowRight, Building2, CheckCircle2, FileSignature, Loader2, Plus, Search, Send, Trash2, UserPlus, Users } from "lucide-react";
 import { Card } from "@/components/ui/Card";
 import { ConfirmDialog } from "@/components/ui/ConfirmDialog";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { AssignClientsModal } from "@/components/projects/AssignClientsModal";
 import { useProjectClients } from "@/hooks/useAssignments";
+import { useClientProposal, useSendToClient } from "@/hooks/useClientProposal";
 import { useAllProposals, useDeleteProject, type ProjectDetails } from "@/store/projects";
 import { formatDate } from "@/lib/utils";
 
@@ -21,11 +22,23 @@ function ProposalCard({
   onDelete: () => void;
 }) {
   const { data: clientIds } = useProjectClients(proposal.id);
+  const { data: clientProposal } = useClientProposal(proposal.id);
+  const sendToClient = useSendToClient(proposal.id);
   const count = clientIds?.length ?? 0;
   const stop = (fn: () => void) => (e: MouseEvent) => {
     e.stopPropagation();
     fn();
   };
+
+  const isDone = clientProposal?.status === "done";
+  const isSent = clientProposal?.sentToClient === true;
+  const [justSent, setJustSent] = useState(false);
+
+  function handleSend() {
+    sendToClient.mutate(undefined, {
+      onSuccess: () => setJustSent(true),
+    });
+  }
 
   return (
     <Card className="p-5 card-hover cursor-pointer" onClick={onOpen}>
@@ -55,16 +68,38 @@ function ProposalCard({
         <span className="text-xs text-faint">
           {proposal.createdAt ? `Created ${formatDate(proposal.createdAt)}` : "—"}
         </span>
-        <span className="inline-flex items-center gap-1.5 text-xs text-muted">
-          <Users className="size-3.5 text-faint" />
-          {count} client{count === 1 ? "" : "s"}
-        </span>
+        <div className="flex items-center gap-2">
+          {isSent && (
+            <span className="inline-flex items-center gap-1 text-xs font-medium text-success bg-success-bg rounded-full px-2 py-0.5">
+              <CheckCircle2 className="size-3" /> Sent
+            </span>
+          )}
+          <span className="inline-flex items-center gap-1.5 text-xs text-muted">
+            <Users className="size-3.5 text-faint" />
+            {count} client{count === 1 ? "" : "s"}
+          </span>
+        </div>
       </div>
 
       <div className="mt-3 flex items-center justify-end gap-2">
         <button className="btn btn-outline btn-sm" onClick={stop(onAssign)}>
           <UserPlus className="size-3.5" /> Assign
         </button>
+        {isDone && !isSent && (
+          <button
+            className="btn btn-outline btn-sm text-navy-700 border-navy-200 hover:bg-navy-50"
+            onClick={stop(handleSend)}
+            disabled={sendToClient.isPending}
+          >
+            {sendToClient.isPending ? <Loader2 className="size-3.5 animate-spin" /> : <Send className="size-3.5" />}
+            Send to Client
+          </button>
+        )}
+        {justSent && !sendToClient.isPending && (
+          <span className="text-xs text-success inline-flex items-center gap-1">
+            <CheckCircle2 className="size-3.5" /> Sent!
+          </span>
+        )}
         <button className="btn btn-primary btn-sm" onClick={stop(onOpen)}>
           Open <ArrowRight className="size-3.5" />
         </button>

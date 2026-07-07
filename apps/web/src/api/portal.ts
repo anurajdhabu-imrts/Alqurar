@@ -88,6 +88,43 @@ export async function downloadPortalDocApi(token: string, documentId: string, fi
   URL.revokeObjectURL(url);
 }
 
+// ── Portal Proposal (sent-to-client) ──────────────────────────────────────
+
+export interface PortalProposal {
+  projectId: string;
+  title: string;
+  projectName: string;
+  date: string | null;
+  sentAt: string | null;
+  status: "sent";
+}
+
+export interface PortalProposalDownload {
+  content: Record<string, unknown> | null;
+  inputs: Record<string, unknown>;
+  projectName: string;
+  currency: string;
+}
+
+/** Fetch the list of proposals that have been sent to this client. */
+export async function getPortalProposalApi(token: string): Promise<PortalProposal[]> {
+  const res = await fetch(`${baseURL}/portal/${encodeURIComponent(token)}/proposal`);
+  if (!res.ok) throw new Error(await readError(res, "Couldn't load your proposals."));
+  return res.json();
+}
+
+/** Fetch the full proposal data for client-side PDF generation. */
+export async function getPortalProposalDownloadApi(
+  token: string,
+  projectId: string,
+): Promise<PortalProposalDownload> {
+  const res = await fetch(
+    `${baseURL}/portal/${encodeURIComponent(token)}/proposal/download?projectId=${encodeURIComponent(projectId)}`,
+  );
+  if (!res.ok) throw new Error(await readError(res, "Couldn't download this proposal."));
+  return res.json();
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 // DISABLED — email OTP + verified session (kept for future restore)
 //
