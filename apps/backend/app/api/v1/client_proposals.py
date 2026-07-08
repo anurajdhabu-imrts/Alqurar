@@ -4,6 +4,7 @@ from typing import Optional
 from fastapi import APIRouter, BackgroundTasks, Body, Depends, HTTPException
 
 from app.services import project_service, client_proposal_service
+from app.services.assignment_service import project_ids_for_client
 from app.api.v1.deps import get_current_user
 
 router = APIRouter()
@@ -15,8 +16,13 @@ _NOT_CONFIGURED = (
 
 
 @router.get("/project/{project_id}")
-async def get_client_proposal(project_id: str, _=Depends(get_current_user)):
-    """The proposal's generated costed client proposal + generation status."""
+async def get_client_proposal(project_id: str, current_user=Depends(get_current_user)):
+    """The proposal's generated costed client proposal + generation status.
+
+    A logged-in client may only read a proposal for a project assigned to them."""
+    if current_user.get("role") == "Client View":
+        if project_id not in project_ids_for_client(current_user["id"]):
+            raise HTTPException(status_code=403, detail="This proposal isn't linked to your account.")
     return client_proposal_service.get_proposal(project_id)
 
 
