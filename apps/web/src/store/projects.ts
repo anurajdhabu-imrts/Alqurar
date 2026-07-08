@@ -78,6 +78,9 @@ export function useConvertProposal() {
         return [...rest, created];
       });
       qc.invalidateQueries({ queryKey: projectsKey });
+      // Confirm also assigns + confirms the client server-side — refresh those.
+      qc.invalidateQueries({ queryKey: ["assignments"] });
+      qc.invalidateQueries({ queryKey: ["client-profiles"] });
     },
   });
 }

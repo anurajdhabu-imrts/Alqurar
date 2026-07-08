@@ -6,12 +6,15 @@ from uuid import uuid4
 
 from app.db import SessionLocal
 from app.models import (
+    Assignment,
+    ClientProfile,
     Document,
     DocumentComment,
     DelayEvent,
     EOTClaim,
     Project,
     ProjectClause,
+    User,
 )
 
 
@@ -157,6 +160,22 @@ def convert_proposal_to_project(
                 projectId=new_id, content=eot.content, model=eot.model,
                 status=eot.status, error=eot.error, createdAt=now, updatedAt=now,
             ))
+
+        # 6. Carry the client assignment onto the new project and confirm the
+        #    client — so once confirmed they can log in and see the delivery
+        #    project. Temporary → Confirmed; the login account is (re)activated.
+        assignments = db.query(Assignment).filter(Assignment.project_id == proposal_id).all()
+        for a in assignments:
+            db.add(Assignment(
+                id=f"a-{uuid4().hex}", project_id=new_id,
+                client_user_id=a.client_user_id, assigned_by=a.assigned_by, created_at=now,
+            ))
+            profile = db.get(ClientProfile, a.client_user_id)
+            if profile:
+                profile.clientType = "Confirmed"
+            user = db.get(User, a.client_user_id)
+            if user and user.status != "Active":
+                user.status = "Active"
 
         db.commit()
         return proj.to_dict()
