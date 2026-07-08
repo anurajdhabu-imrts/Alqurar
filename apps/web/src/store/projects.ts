@@ -6,7 +6,7 @@
 // these lived in localStorage, so a client on another browser couldn't see them.)
 import { useMemo } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { createProjectApi, deleteProjectApi, listProjectsApi } from "@/api/projects";
+import { convertProposalApi, createProjectApi, deleteProjectApi, listProjectsApi } from "@/api/projects";
 import type { Project } from "@/types";
 
 /** A Project plus the extra detail captured by the creation wizard. */
@@ -61,6 +61,24 @@ export function useDeleteProject() {
   return useMutation({
     mutationFn: (projectId: string) => deleteProjectApi(projectId),
     onSuccess: () => qc.invalidateQueries({ queryKey: projectsKey }),
+  });
+}
+
+/** Confirm a proposal → copy it into a new ordinary project. Returns the created
+ *  project so the caller can link straight to it. */
+export function useConvertProposal() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ proposalId, newId, newCode }: { proposalId: string; newId: string; newCode: string }) =>
+      convertProposalApi(proposalId, newId, newCode),
+    onSuccess: (created) => {
+      qc.setQueryData<ProjectDetails[]>(projectsKey, (old) => {
+        const list = old ?? [];
+        const rest = list.filter((p) => p.id !== created.id);
+        return [...rest, created];
+      });
+      qc.invalidateQueries({ queryKey: projectsKey });
+    },
   });
 }
 

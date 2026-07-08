@@ -144,7 +144,7 @@ export function ProjectWorkspacePage() {
           { id: "dataroom", label: "Data Room", icon: Paperclip, count: docs.length },
           { id: "events", label: "Delay Events", icon: ListChecks },
           { id: "eventsByDoc", label: "Events by Document", icon: FileStack },
-          { id: "proposal", label: "Proposal", icon: FileSignature },
+          { id: "proposal", label: "EOT Report", icon: FileSignature },
           { id: "clauses", label: "Clause Library", icon: BookText },
           // ── Hidden for now — uncomment when these modules are built ──
           // { id: "windows", label: "Windows Analysis", icon: GanttChartSquare },
