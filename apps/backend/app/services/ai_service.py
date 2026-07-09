@@ -741,6 +741,7 @@ _INPUT_LABELS = {
     "reference": "Proposal reference",
     "date": "Proposal date",
     "signatory": "Signatory (name & title)",
+    "currency": "Currency",
     "discount": "Special discount (amount to deduct)",
     "feeBasis": "Fee basis / commercial notes",
     "notes": "Additional instructions",
@@ -788,7 +789,7 @@ async def generate_client_proposal(
      the AI's defaults (client address, attention, reference, date, discount, …)."""
     p = project or {}
     inputs = inputs or {}
-    currency = p.get("currency") or "OMR"
+    currency = inputs.get("currency") or p.get("currency") or "OMR"
     today = str(inputs.get("date") or "").strip() or datetime.now(timezone.utc).strftime("%d %B %Y")
     header = [
         f"Proposal for: {p.get('name', '')}",

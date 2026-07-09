@@ -262,7 +262,7 @@ export async function downloadProposalDoc(doc: Content, opts: ProposalDocOpts): 
   });
 
   const label = (text: string, spacingAfter = 120) =>
-    new Paragraph({ alignment: AlignmentType.CENTER, spacing: { before: 160, after: spacingAfter }, children: [new TextRun({ text, bold: true, color: MAROON, size: 24, characterSpacing: 30 })] });
+    new Paragraph({ alignment: AlignmentType.CENTER, spacing: { before: 160, after: spacingAfter }, children: [new TextRun({ text, bold: true, color: MAROON, size: 32, characterSpacing: 30 })] });
   const centerImg = (img: ImageRun | null, fallback: string, spacingAfter = 100) =>
     new Paragraph({ alignment: AlignmentType.CENTER, spacing: { after: spacingAfter }, children: img ? [img] : [new TextRun({ text: fallback, bold: true, color: NAVY, size: 36 })] });
 
@@ -271,14 +271,14 @@ export async function downloadProposalDoc(doc: Content, opts: ProposalDocOpts): 
     new Paragraph({ spacing: { before: 700 } }),
     label("PROPOSAL SUBMITTED TO", 140),
     centerImg(clientCover, opts.clientCompany || "", 60),
-    ...(opts.clientCompany ? [new Paragraph({ alignment: AlignmentType.CENTER, spacing: { after: 140 }, children: [new TextRun({ text: opts.clientCompany, bold: true, color: MAROON, size: 26 })] })] : []),
+    ...(opts.clientCompany ? [new Paragraph({ alignment: AlignmentType.CENTER, spacing: { after: 140 }, children: [new TextRun({ text: opts.clientCompany, bold: true, color: MAROON, size: 34 })] })] : []),
     label("PREPARED BY", 100),
     centerImg(aqCover, "AL QARAR", 40),
-    new Paragraph({ alignment: AlignmentType.CENTER, spacing: { after: 20 }, children: [new TextRun({ text: TAGLINE_1, italics: true, color: NAVY, size: 18 })] }),
-    new Paragraph({ alignment: AlignmentType.CENTER, spacing: { after: 200 }, children: [new TextRun({ text: TAGLINE_2, italics: true, color: NAVY, size: 15 })] }),
+    new Paragraph({ alignment: AlignmentType.CENTER, spacing: { after: 20 }, children: [new TextRun({ text: TAGLINE_1, italics: true, color: NAVY, size: 24 })] }),
+    new Paragraph({ alignment: AlignmentType.CENTER, spacing: { after: 200 }, children: [new TextRun({ text: TAGLINE_2, italics: true, color: NAVY, size: 20 })] }),
     label("For", 120),
-    new Paragraph({ alignment: AlignmentType.CENTER, spacing: { after: 180 }, children: [new TextRun({ text: opts.projectName || title, bold: true, color: MAROON, size: 28 })] }),
-    ...(doc.date ? [new Paragraph({ alignment: AlignmentType.CENTER, children: [new TextRun({ text: doc.date, bold: true, color: MAROON, size: 20 })] })] : []),
+    new Paragraph({ alignment: AlignmentType.CENTER, spacing: { after: 180 }, children: [new TextRun({ text: opts.projectName || title, bold: true, color: MAROON, size: 36 })] }),
+    ...(doc.date ? [new Paragraph({ alignment: AlignmentType.CENTER, children: [new TextRun({ text: doc.date, bold: true, color: MAROON, size: 26 })] })] : []),
     new Paragraph({ children: [new PageBreak()] }),
   ];
 
