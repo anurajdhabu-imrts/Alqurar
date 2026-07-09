@@ -9,6 +9,7 @@ import { ClientDashboardPage } from "@/pages/client/ClientDashboardPage";
 import { ClaimDocumentUploadPage } from "@/pages/client/ClaimDocumentUploadPage";
 import { ClientProposalsPage } from "@/pages/client/ClientProposalsPage";
 import { ClientProjectsPage } from "@/pages/client/ClientProjectsPage";
+import { ClientSettingsPage } from "@/pages/client/ClientSettingsPage";
 import { LoginPage } from "@/pages/auth/LoginPage";
 import { ClientPortalPage } from "@/pages/portal/ClientPortalPage";
 import { DashboardPage } from "@/pages/Dashboard/DashboardPage";
@@ -72,6 +73,7 @@ export default function App() {
                 <Route path="/client" element={<ClientDashboardPage />} />
                 <Route path="/client/proposals" element={<ClientProposalsPage />} />
                 <Route path="/client/projects" element={<ClientProjectsPage />} />
+                <Route path="/client/settings" element={<ClientSettingsPage />} />
                 <Route path="/client/upload" element={<ClaimDocumentUploadPage />} />
                 <Route
                   path="/client/documents/:docId"
