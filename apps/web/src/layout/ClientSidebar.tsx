@@ -1,5 +1,5 @@
 import { NavLink } from "react-router-dom";
-import { FileSignature, FolderKanban, LayoutDashboard, type LucideIcon } from "lucide-react";
+import { FileSignature, FolderKanban, LayoutDashboard, Settings, type LucideIcon } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useUserPermissions } from "@/hooks/usePermission";
 
@@ -16,6 +16,10 @@ const items: NavItem[] = [
   { to: "/client", label: "Dashboard", icon: LayoutDashboard, end: true, permission: "client.dashboard" },
   { to: "/client/proposals", label: "Proposal", icon: FileSignature, permission: "client.dashboard" },
   { to: "/client/projects", label: "Projects", icon: FolderKanban, permission: "client.documents.upload" },
+];
+
+const accountItems: NavItem[] = [
+  { to: "/client/settings", label: "Settings", icon: Settings },
 ];
 
 const linkBase =
@@ -93,6 +97,13 @@ export function ClientSidebar({ mobileOpen, onClose }: { mobileOpen: boolean; on
           <p className="px-3 mb-1.5 text-[11px] font-semibold uppercase tracking-wider text-white/35">Menu</p>
           <div className="space-y-0.5">
             {visibleItems.map((item) => (
+              <Item key={item.to} item={item} onClose={onClose} />
+            ))}
+          </div>
+
+          <p className="px-3 mt-5 mb-1.5 text-[11px] font-semibold uppercase tracking-wider text-white/35">Account</p>
+          <div className="space-y-0.5">
+            {accountItems.map((item) => (
               <Item key={item.to} item={item} onClose={onClose} />
             ))}
           </div>
