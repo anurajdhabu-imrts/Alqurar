@@ -35,6 +35,8 @@ export interface ProposalInputs {
   discount?: string;
   feeBasis?: string;
   notes?: string;
+  /** Currency for the commercial proposal (overrides the project default). */
+  currency?: string;
   /** Admin-set prices — used verbatim as the costing (AI does not invent fees). */
   lineItems?: ProposalLineItem[];
   /** Client logo as a data URL, shown on the proposal + PDF. */

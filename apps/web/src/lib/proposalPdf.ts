@@ -400,14 +400,14 @@ export function downloadProposalPdf(doc: Content, opts: ProposalPdfOpts): void {
     }
   }
   function drawFooter(n: number, total: number) {
-    const fy = H - 46;
+    const fy = H - 56;
     setDraw(RULE);
     pdf.setLineWidth(0.5);
     pdf.line(M, fy, M + contentW, fy);
     pdf.setFontSize(7);
     setFont(false, false);
     setColor(GREY);
-    const lines = pdf.splitTextToSize(CONFIDENTIAL, contentW - 70) as string[];
+    const lines = pdf.splitTextToSize(CONFIDENTIAL, contentW) as string[];
     let cy = fy + 9;
     for (const l of lines) {
       const w = pdf.getTextWidth(l);
@@ -416,7 +416,7 @@ export function downloadProposalPdf(doc: Content, opts: ProposalPdfOpts): void {
     }
     pdf.setFontSize(8);
     const s = `Page ${n} of ${total}`;
-    pdf.text(s, M + contentW - pdf.getTextWidth(s), fy + 9);
+    pdf.text(s, M + contentW - pdf.getTextWidth(s), cy + 3);
   }
 
   // ── Cover page (page 1 — no band/footer) ──────────────────────────────────
@@ -440,16 +440,16 @@ export function downloadProposalPdf(doc: Content, opts: ProposalPdfOpts): void {
   }
 
   y = 170;
-  coverText("PROPOSAL SUBMITTED TO", 12, MAROON, true, false, 16);
+  coverText("PROPOSAL SUBMITTED TO", 16, MAROON, true, false, 16);
   coverImg(opts.clientLogo, 130, 80, 14);
-  if (opts.clientCompany) coverText(opts.clientCompany, 14, MAROON, true, false, 16);
-  coverText("PREPARED BY", 12, MAROON, true, false, 12);
+  if (opts.clientCompany) coverText(opts.clientCompany, 18, MAROON, true, false, 16);
+  coverText("PREPARED BY", 16, MAROON, true, false, 12);
   coverImg(opts.alqararLogo, 220, 70, 10);
-  coverText(TAGLINE_1, 10, NAVY, false, true, 2);
-  coverText(TAGLINE_2, 8.5, NAVY, false, true, 18);
-  coverText("For", 12, MAROON, true, false, 12);
-  coverText(opts.projectName || title, 15, MAROON, true, false, 12);
-  if (doc.date) coverText(doc.date, 10, MAROON, true, false, 0);
+  coverText(TAGLINE_1, 13, NAVY, false, true, 2);
+  coverText(TAGLINE_2, 11, NAVY, false, true, 18);
+  coverText("For", 16, MAROON, true, false, 12);
+  coverText(opts.projectName || title, 20, MAROON, true, false, 12);
+  if (doc.date) coverText(doc.date, 13, MAROON, true, false, 0);
 
   // ── Content pages ─────────────────────────────────────────────────────────
   pdf.addPage();

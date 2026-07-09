@@ -24,6 +24,21 @@ import type { ProjectDelayEvent } from "@/types";
 import { formatCurrencyFull, formatDate } from "@/lib/utils";
 
 const TODAY = new Date().toISOString().slice(0, 10);
+const CURRENCIES = ["OMR", "AED", "USD", "SAR", "QAR", "KWD", "BHD"];
+
+/** Fixed anchor lines that always wrap the delay-event lines. */
+const ANCHOR_FIRST: ProposalLineItem = {
+  item: "Document Review & Claim Strategy",
+  description: "Compilation, indexing and review of contract documents and correspondence; entitlement and strategy assessment across all identified events.",
+  timeline: "",
+  amount: "",
+};
+const ANCHOR_LAST: ProposalLineItem = {
+  item: "Statement of Claim & Final Submission",
+  description: "Consolidation, supporting appendices, quality review and submission-ready claim package.",
+  timeline: "",
+  amount: "",
+};
 
 /** Parse an admin amount string ("1,200", "OMR 400") to a number. */
 function parseNum(v?: string): number {
@@ -43,8 +58,21 @@ function eventsToLines(events: ProjectDelayEvent[]): ProposalLineItem[] {
   return events.map((e) => ({ item: e.title, description: shortDesc(e.narrative), timeline: "", amount: "" }));
 }
 
+/** Build the full line-items list: anchor-first, delay-event lines, anchor-last. */
+function buildLineItems(saved: ProposalLineItem[] | undefined, events: ProjectDelayEvent[]): ProposalLineItem[] {
+  if (saved?.length) {
+    // Ensure anchors exist at first/last positions; preserve saved content.
+    const inner = saved.filter((l) => l.item !== ANCHOR_FIRST.item && l.item !== ANCHOR_LAST.item);
+    const first = saved.find((l) => l.item === ANCHOR_FIRST.item) ?? { ...ANCHOR_FIRST };
+    const last = saved.find((l) => l.item === ANCHOR_LAST.item) ?? { ...ANCHOR_LAST };
+    return [first, ...inner, last];
+  }
+  const eventLines = events.length ? eventsToLines(events) : [{ item: "", timeline: "", description: "", amount: "" }];
+  return [{ ...ANCHOR_FIRST }, ...eventLines, { ...ANCHOR_LAST }];
+}
+
 /** Build the form state from stored inputs, seeding prices from the delay events. */
-function buildForm(inp: ProposalInputs, employer: string | undefined, events: ProjectDelayEvent[]): ProposalInputs {
+function buildForm(inp: ProposalInputs, employer: string | undefined, projectCurrency: string, events: ProjectDelayEvent[]): ProposalInputs {
   return {
     reference: inp.reference ?? "",
     date: inp.date ?? TODAY,
@@ -57,11 +85,8 @@ function buildForm(inp: ProposalInputs, employer: string | undefined, events: Pr
     feeBasis: inp.feeBasis ?? "",
     notes: inp.notes ?? "",
     logo: inp.logo ?? "",
-    lineItems: inp.lineItems?.length
-      ? inp.lineItems
-      : events.length
-        ? eventsToLines(events)
-        : [{ item: "", timeline: "", description: "", amount: "" }],
+    currency: inp.currency ?? projectCurrency,
+    lineItems: buildLineItems(inp.lineItems, events),
   };
 }
 
@@ -81,7 +106,7 @@ export function ProposalCostingTab({ proposalId }: { proposalId: string }) {
   const running = proposal?.status === "running" || generate.isPending;
   const failed = proposal?.status === "failed";
   const doc = proposal?.content ?? null;
-  const currency = record?.currency ?? "OMR";
+  const projectCurrency = record?.currency ?? "OMR";
 
   const [form, setForm] = useState<ProposalInputs>({});
   const [editing, setEditing] = useState(false);
@@ -92,8 +117,10 @@ export function ProposalCostingTab({ proposalId }: { proposalId: string }) {
   const seedReady = !!proposal && (!!proposal.inputs?.lineItems?.length || !eventsLoading);
   if (seedReady && seededFor !== proposalId) {
     setSeededFor(proposalId);
-    setForm(buildForm(proposal!.inputs ?? {}, record?.employer, events));
+    setForm(buildForm(proposal!.inputs ?? {}, record?.employer, projectCurrency, events));
   }
+
+  const currency = form.currency ?? projectCurrency;
 
   // The form shows before the first generation, or when the admin clicks Edit.
   const showForm = editing || (!doc && !running);
@@ -115,13 +142,19 @@ export function ProposalCostingTab({ proposalId }: { proposalId: string }) {
   function removeLine(i: number) {
     setForm((f) => ({ ...f, lineItems: (f.lineItems ?? []).filter((_, x) => x !== i) }));
   }
-  /** Reset the line items to the current delay events, keeping any prices the
-   *  admin already typed for events with the same name. */
+  /** Reset the delay-event lines from the current events, keeping any prices and timelines
+   *  already typed and preserving the two anchor lines. */
   function reloadFromEvents() {
     setForm((f) => {
-      const priced = new Map((f.lineItems ?? []).map((l) => [l.item, l.amount]));
-      const next = eventsToLines(events).map((l) => ({ ...l, amount: priced.get(l.item) ?? "" }));
-      return { ...f, lineItems: next };
+      const savedVals = new Map((f.lineItems ?? []).map((l) => [l.item, { amount: l.amount, timeline: l.timeline }]));
+      const eventLines = eventsToLines(events).map((l) => ({
+        ...l,
+        amount: savedVals.get(l.item)?.amount ?? "",
+        timeline: savedVals.get(l.item)?.timeline ?? ""
+      }));
+      const first = f.lineItems?.find((l) => l.item === ANCHOR_FIRST.item) ?? { ...ANCHOR_FIRST };
+      const last = f.lineItems?.find((l) => l.item === ANCHOR_LAST.item) ?? { ...ANCHOR_LAST };
+      return { ...f, lineItems: [first, ...eventLines, last] };
     });
   }
 
@@ -164,11 +197,11 @@ export function ProposalCostingTab({ proposalId }: { proposalId: string }) {
   }
 
   function startEdit() {
-    setForm(buildForm(proposal?.inputs ?? {}, record?.employer, events));
+    setForm(buildForm(proposal?.inputs ?? {}, record?.employer, projectCurrency, events));
     setEditing(true);
   }
   function cancelEdit() {
-    setForm(buildForm(proposal?.inputs ?? {}, record?.employer, events));
+    setForm(buildForm(proposal?.inputs ?? {}, record?.employer, projectCurrency, events));
     setEditing(false);
   }
 
@@ -259,6 +292,17 @@ export function ProposalCostingTab({ proposalId }: { proposalId: string }) {
                 <label className="label" htmlFor="pr-sign">Signatory (name & title)</label>
                 <input id="pr-sign" className="input" value={form.signatory ?? ""} onChange={set("signatory")} />
               </div>
+              <div>
+                <label className="label" htmlFor="pr-currency">Currency</label>
+                <select
+                  id="pr-currency"
+                  className="input"
+                  value={form.currency ?? projectCurrency}
+                  onChange={(e) => setForm((f) => ({ ...f, currency: e.target.value }))}
+                >
+                  {CURRENCIES.map((c) => <option key={c} value={c}>{c}</option>)}
+                </select>
+              </div>
             </div>
 
             {/* Prices — one line per identified delay event; admin enters the price */}
@@ -283,23 +327,31 @@ export function ProposalCostingTab({ proposalId }: { proposalId: string }) {
                     {eventsLoading ? "Loading delay events…" : "No delay events identified yet — add priced lines manually, or identify events in the Delay Events tab."}
                   </p>
                 )}
-                {lines.map((l, i) => (
-                  <div key={i} className="grid grid-cols-12 gap-2 items-center rounded-lg border border-border px-3 py-2">
-                    <div className="col-span-12 sm:col-span-6 min-w-0">
-                      {l.item || l.description ? (
-                        <>
-                          <p className="text-sm font-medium text-ink leading-snug">{l.item || "—"}</p>
-                          {l.description && <p className="text-xs text-muted leading-snug mt-0.5">{l.description}</p>}
-                        </>
-                      ) : (
-                        <input className="input" placeholder="Item name (custom line)" value={l.item} onChange={(e) => setLine(i, "item", e.target.value)} />
-                      )}
+                {lines.map((l, i) => {
+                  const isAnchor = l.item === ANCHOR_FIRST.item || l.item === ANCHOR_LAST.item;
+                  return (
+                    <div key={i} className={`grid grid-cols-12 gap-2 items-center rounded-lg border px-3 py-2 ${
+                      isAnchor ? "border-navy-200 bg-navy-50/50" : "border-border"
+                    }`}>
+                      <div className="col-span-12 sm:col-span-6 min-w-0">
+                        {l.item || l.description ? (
+                          <>
+                            <p className={`text-sm font-medium leading-snug ${isAnchor ? "text-navy-700" : "text-ink"}`}>{l.item || "—"}</p>
+                            {l.description && <p className="text-xs text-muted leading-snug mt-0.5">{l.description}</p>}
+                          </>
+                        ) : (
+                          <input className="input" placeholder="Item name (custom line)" value={l.item} onChange={(e) => setLine(i, "item", e.target.value)} />
+                        )}
+                      </div>
+                      <input className="input col-span-5 sm:col-span-3" placeholder="Timeline (optional)" value={l.timeline ?? ""} onChange={(e) => setLine(i, "timeline", e.target.value)} />
+                      <input className="input col-span-6 sm:col-span-2 text-right tabular-nums" placeholder={`Price ${currency}`} value={l.amount} onChange={(e) => setLine(i, "amount", e.target.value)} />
+                      {isAnchor
+                        ? <span className="col-span-1" />
+                        : <button className="btn btn-ghost px-2 col-span-1 text-error h-9 justify-self-end" onClick={() => removeLine(i)} aria-label="Remove line"><Trash2 className="size-4" /></button>
+                      }
                     </div>
-                    <input className="input col-span-5 sm:col-span-3" placeholder="Timeline (optional)" value={l.timeline ?? ""} onChange={(e) => setLine(i, "timeline", e.target.value)} />
-                    <input className="input col-span-6 sm:col-span-2 text-right tabular-nums" placeholder={`Price ${currency}`} value={l.amount} onChange={(e) => setLine(i, "amount", e.target.value)} />
-                    <button className="btn btn-ghost px-2 col-span-1 text-error h-9 justify-self-end" onClick={() => removeLine(i)} aria-label="Remove line"><Trash2 className="size-4" /></button>
-                  </div>
-                ))}
+                  );
+                })}
               </div>
               <div className="mt-3 grid sm:grid-cols-2 gap-4 items-end">
                 <div>
