@@ -11,6 +11,8 @@ from app.services.user_service import seed_users
 from app.services.client_profile_service import ensure_tokens
 from app.services.document_service import list_unfinished_analysis_ids
 from app.services.document_analysis import run_many
+from app.services.contract_book_service import list_unfinished_book_ids
+from app.services.book_clause_extraction import run_many as run_many_books
 
 
 @asynccontextmanager
@@ -26,6 +28,11 @@ async def lifespan(_app: FastAPI):
         pending = list_unfinished_analysis_ids()
         if pending:
             asyncio.create_task(run_many(pending))
+
+        # Same for Knowledge Center books whose clause extraction was cut short.
+        pending_books = list_unfinished_book_ids()
+        if pending_books:
+            asyncio.create_task(run_many_books(pending_books))
     yield
 
 
