@@ -25,6 +25,8 @@ import { ObligationsPage } from "@/pages/clm/ObligationsPage";
 import { VariationsPage } from "@/pages/clm/VariationsPage";
 import { NoticesPage } from "@/pages/clm/NoticesPage";
 import { DisputesPage } from "@/pages/disputes/DisputesPage";
+import { KnowledgeCenterPage } from "@/pages/knowledge/KnowledgeCenterPage";
+import { BookDetailPage } from "@/pages/knowledge/BookDetailPage";
 import { SettingsPage } from "@/pages/settings/SettingsPage";
 import { UsersPage } from "@/pages/admin/UsersPage";
 import { CreateUserPage } from "@/pages/admin/CreateUserPage";
@@ -116,6 +118,8 @@ export default function App() {
               <Route path="/variations" element={<VariationsPage />} />
               <Route path="/notices" element={<NoticesPage />} />
               <Route path="/disputes" element={<DisputesPage />} />
+              <Route path="/knowledge" element={<KnowledgeCenterPage />} />
+              <Route path="/knowledge/:bookId" element={<BookDetailPage />} />
               <Route path="/clients" element={<ClientsPage />} />
               <Route path="/clients/new" element={<RegisterClientPage />} />
               <Route path="/users" element={<UsersPage />} />

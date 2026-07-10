@@ -346,6 +346,84 @@ class ClientProposal(Base):
         }
 
 
+class ContractBook(Base):
+    """A standard-form contract book in the Knowledge Center (FIDIC Red/Yellow/
+    Silver, NEC4, …), uploaded once by an admin and read end-to-end by Claude to
+    populate `book_clauses`.
+
+    This is deliberately NOT the same table as ProjectClause. A project's Clause
+    Library holds the clauses of THAT project's own contract; a ContractBook is
+    the published standard form, shared across every project as reference.
+
+    The file bytes live on this row (DEFERRED — a book is tens of MB and must
+    never be pulled into the card-list query). They are kept so a book can be
+    re-analysed later without asking the admin to upload it again.
+    """
+
+    __tablename__ = "contract_books"
+
+    id: Mapped[str] = mapped_column(String, primary_key=True)
+    name: Mapped[str] = mapped_column(String, default="", index=True)
+    edition: Mapped[str] = mapped_column(String, default="")
+    publisher: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+    fileName: Mapped[str] = mapped_column(String, default="")
+    sizeKB: Mapped[int] = mapped_column(Integer, default=0)
+    mime: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+    data: Mapped[Optional[bytes]] = mapped_column(LargeBinary, nullable=True, deferred=True)
+    uploadedAt: Mapped[str] = mapped_column(String, default="")
+    uploadedBy: Mapped[str] = mapped_column(String, default="")
+    # Extraction lifecycle: "pending" (queued), "processing", "done", "failed".
+    status: Mapped[str] = mapped_column(String, default="pending", index=True)
+    error: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    clauseCount: Mapped[int] = mapped_column(Integer, default=0)
+    # A book is read in chunks (a whole book's verbatim clauses exceed one model
+    # response), so progress is reported as chunks completed out of total.
+    processedChunks: Mapped[int] = mapped_column(Integer, default=0)
+    totalChunks: Mapped[int] = mapped_column(Integer, default=0)
+
+    _FIELDS = (
+        "id", "name", "edition", "publisher", "fileName", "sizeKB", "mime",
+        "uploadedAt", "uploadedBy", "status", "error", "clauseCount",
+        "processedChunks", "totalChunks",
+    )
+
+    def to_dict(self) -> dict:
+        return {f: getattr(self, f) for f in self._FIELDS}
+
+
+class BookClause(Base):
+    """One clause / sub-clause extracted from a ContractBook by Claude.
+
+    Unlike ProjectClause (which stores only a short `clause_description`), a book
+    clause keeps the VERBATIM `clause_text` alongside an AI `summary`, because the
+    Knowledge Center is a reference library people read from, not a claim worksheet.
+    """
+
+    __tablename__ = "book_clauses"
+
+    id: Mapped[str] = mapped_column(String, primary_key=True)
+    bookId: Mapped[str] = mapped_column(String, index=True)
+    clause_number: Mapped[str] = mapped_column(String, default="", index=True)
+    clause_title: Mapped[str] = mapped_column(String, default="")
+    clause_text: Mapped[str] = mapped_column(Text, default="")
+    summary: Mapped[str] = mapped_column(Text, default="")
+    tags: Mapped[list] = mapped_column(JSON, default=list)
+    # Preserves the order clauses appear in the book (chunk index, then position),
+    # so the reader lists them in document order rather than alphabetically.
+    sortIndex: Mapped[int] = mapped_column(Integer, default=0)
+    createdAt: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+
+    _FIELDS = (
+        "id", "bookId", "clause_number", "clause_title", "clause_text",
+        "summary", "tags", "sortIndex", "createdAt",
+    )
+
+    def to_dict(self) -> dict:
+        d = {f: getattr(self, f) for f in self._FIELDS}
+        d["tags"] = self.tags or []
+        return d
+
+
 class PortalOTP(Base):
     """The active one-time code for a client portal link (one row per link).
     The code itself is stored hashed; rows expire and are deleted on use."""

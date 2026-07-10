@@ -11,6 +11,7 @@ import {
   FileSignature,
   FolderKanban,
   LayoutDashboard,
+  Library,
   Settings,
   ShieldCheck,
   Users,
@@ -37,6 +38,14 @@ const sections: { heading: string; items: NavItem[] }[] = [
       { to: "/", label: "Dashboard", icon: LayoutDashboard, end: true },
       { to: "/proposals", label: "Proposals", icon: FileSignature },
       { to: "/projects", label: "Projects", icon: FolderKanban },
+    ],
+  },
+  {
+    heading: "Knowledge",
+    items: [
+      // The central library of standard contract books (FIDIC, NEC4, …). Distinct
+      // from a project's own Clause Library, which lives in the project workspace.
+      { to: "/knowledge", label: "Knowledge Center", icon: Library, permission: "contracts.view" },
     ],
   },
   // ── Hidden for now (backend pending) — uncomment to restore ──────────────

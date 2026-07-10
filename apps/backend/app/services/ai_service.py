@@ -452,6 +452,108 @@ async def extract_clauses(
     return json.loads(payload).get("clauses", [])
 
 
+# ── Knowledge Center: standard contract book clause extraction ──────────────
+# Reads a published standard form (FIDIC Red/Yellow/Silver, NEC4, …) and returns
+# EVERY clause it finds, with the wording kept verbatim plus a plain-language
+# summary. This differs from extract_clauses above in three ways that matter:
+# it is exhaustive rather than EOT-focused, it keeps the full clause text, and it
+# is called once per CHUNK of the book (a whole book's verbatim clauses do not
+# fit in a single response). See services/book_clause_extraction.py.
+
+_BOOK_SYSTEM_PROMPT = (
+    "You are a contract librarian digitising a published standard form of "
+    "construction contract (e.g. FIDIC Red/Yellow/Silver Book, NEC4, CPWD) into a "
+    "structured reference library. You are given ONE EXCERPT of the book, in order. "
+    "Extract every numbered clause and sub-clause that appears in this excerpt.\n\n"
+    "Rules:\n"
+    "- Be EXHAUSTIVE for this excerpt. Extract every numbered provision you see, "
+    "including definitions, general conditions and procedural clauses. This is a "
+    "reference library, not a claim — do not filter for relevance.\n"
+    "- 'clause_number' is the number exactly as printed (e.g. '4.12', '8.5', '20.2.1').\n"
+    "- 'clause_title' is the heading exactly as printed (e.g. 'Unforeseeable Physical "
+    "Conditions'). If a provision has no heading, write a short descriptive one.\n"
+    "- 'clause_text' is the clause's wording copied VERBATIM from the excerpt. Do not "
+    "paraphrase, summarise, shorten or 'clean up' this field. Preserve sub-paragraph "
+    "lettering and numbering. Omit running headers, page numbers and footers.\n"
+    "- 'summary' is YOUR plain-language explanation of what the clause means and does, "
+    "in two or three sentences, written for a reader who is not a lawyer. This is the "
+    "only field where you paraphrase.\n"
+    "- 'tags' are 2-4 short topical tags (e.g. 'EOT', 'notice', 'time-bar', 'payment').\n"
+    "- The excerpt may begin or end mid-clause. If a clause's text is cut off at the "
+    "START of the excerpt, SKIP it — the previous excerpt already covered it. If it is "
+    "cut off at the END, still include it with the text you can see.\n"
+    "- Never invent a clause number, heading or wording that is not in the excerpt. If "
+    "the excerpt contains no numbered clauses (a title page, table of contents or "
+    "index), return an empty list."
+)
+
+_BOOK_CLAUSE_ITEM_SCHEMA = {
+    "type": "object",
+    "properties": {
+        "clause_number": {"type": "string"},
+        "clause_title": {"type": "string"},
+        "clause_text": {"type": "string"},
+        "summary": {"type": "string"},
+        "tags": {"type": "array", "items": {"type": "string"}},
+    },
+    "required": ["clause_number", "clause_title", "clause_text", "summary", "tags"],
+    "additionalProperties": False,
+}
+
+_BOOK_OUTPUT_SCHEMA = {
+    "type": "object",
+    "properties": {"clauses": {"type": "array", "items": _BOOK_CLAUSE_ITEM_SCHEMA}},
+    "required": ["clauses"],
+    "additionalProperties": False,
+}
+
+
+async def extract_book_clauses(
+    *,
+    text: str,
+    book_name: str,
+    edition: str | None = None,
+    part: int = 1,
+    of: int = 1,
+) -> list[dict]:
+    """Extract every clause from ONE excerpt of a standard contract book.
+
+    `part`/`of` tell the model where the excerpt sits in the book so it can judge
+    the truncated-clause rule at each edge. Returns a list of plain dicts in the
+    book_clauses shape: {clause_number, clause_title, clause_text, summary, tags}.
+    """
+    header = [f"Book: {book_name}"]
+    if edition:
+        header.append(f"Edition: {edition}")
+    header.append(f"Excerpt {part} of {of}")
+
+    user_content = (
+        "\n".join(header)
+        + f"\n\n--- Book excerpt ({part}/{of}) ---\n"
+        + (text or "(empty excerpt)")
+    )
+
+    async with _client().messages.stream(
+        model=EXTRACTION_MODEL,
+        # Verbatim clause text is far longer than a summary, so this needs a much
+        # larger budget than the EOT clause extractor above.
+        max_tokens=16000,
+        thinking={"type": "adaptive"},
+        system=[
+            {"type": "text", "text": _BOOK_SYSTEM_PROMPT, "cache_control": {"type": "ephemeral"}}
+        ],
+        messages=[{"role": "user", "content": user_content}],
+        output_config={
+            "effort": "low",
+            "format": {"type": "json_schema", "schema": _BOOK_OUTPUT_SCHEMA},
+        },
+    ) as stream:
+        response = await stream.get_final_message()
+
+    payload = next((b.text for b in response.content if b.type == "text"), "")
+    return json.loads(payload).get("clauses", [])
+
+
 # ── EOT claim document generation ───────────────────────────────────────────
 # Assembles a full Extension of Time claim document from the project's delay
 # events and data-room documents, following the standard claim structure.
