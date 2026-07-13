@@ -424,6 +424,117 @@ class BookClause(Base):
         return d
 
 
+class Employee(Base):
+    """Master-data record for a team member, used to price proposal costings.
+
+    This is the single source of truth for who can be costed and at what hourly
+    rate. A costing row COPIES the rate off this record at the time it is saved
+    (see CostingEntry.rate) — so editing an employee's rate here never rewrites the
+    numbers on a proposal that was already costed.
+    """
+
+    __tablename__ = "employees"
+
+    id: Mapped[str] = mapped_column(String, primary_key=True)
+    name: Mapped[str] = mapped_column(String, default="", index=True)
+    designation: Mapped[str] = mapped_column(String, default="", index=True)
+    hourlyRate: Mapped[float] = mapped_column(Float, default=0)
+    department: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+    status: Mapped[str] = mapped_column(String, default="Active")  # "Active" | "Inactive"
+    createdAt: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+    updatedAt: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+
+    _FIELDS = (
+        "id", "name", "designation", "hourlyRate", "department", "status",
+        "createdAt", "updatedAt",
+    )
+
+    def to_dict(self) -> dict:
+        return {f: getattr(self, f) for f in self._FIELDS}
+
+
+class CostingActivity(Base):
+    """One activity/line on a proposal's costing sheet (e.g. "Programme
+    Preparation"), owning a set of CostingEntry rows. Scoped to the proposal's
+    project row (projectId, kind="proposal"). One sheet per proposal = the set of
+    activities sharing a projectId.
+    """
+
+    __tablename__ = "costing_activities"
+
+    id: Mapped[str] = mapped_column(String, primary_key=True)
+    projectId: Mapped[str] = mapped_column(String, index=True)
+    description: Mapped[str] = mapped_column(String, default="")
+    sortIndex: Mapped[int] = mapped_column(Integer, default=0)
+    createdAt: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+    updatedAt: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+
+    _FIELDS = ("id", "projectId", "description", "sortIndex", "createdAt", "updatedAt")
+
+    def to_dict(self) -> dict:
+        return {f: getattr(self, f) for f in self._FIELDS}
+
+
+class CostingEntry(Base):
+    """A single employee line within a CostingActivity: a role, optionally a named
+    employee, the hours, and the hourly rate.
+
+    `rate` and `employeeName` are SNAPSHOTS taken from the Employee master when the
+    entry is saved — deliberately denormalised so a later change to the employee's
+    master rate (or their deletion) does not alter an already-costed proposal. Total
+    cost is derived (hours × rate), never stored.
+    """
+
+    __tablename__ = "costing_entries"
+
+    id: Mapped[str] = mapped_column(String, primary_key=True)
+    activityId: Mapped[str] = mapped_column(String, index=True)
+    # Denormalised so entries can be scoped/queried per proposal (e.g. future
+    # commercial reports) without joining through the activity.
+    projectId: Mapped[str] = mapped_column(String, index=True)
+    role: Mapped[str] = mapped_column(String, default="")
+    employeeId: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+    employeeName: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+    hours: Mapped[float] = mapped_column(Float, default=0)
+    rate: Mapped[float] = mapped_column(Float, default=0)  # snapshot of hourlyRate
+    sortIndex: Mapped[int] = mapped_column(Integer, default=0)
+
+    _FIELDS = (
+        "id", "activityId", "projectId", "role", "employeeId", "employeeName",
+        "hours", "rate", "sortIndex",
+    )
+
+    def to_dict(self) -> dict:
+        return {f: getattr(self, f) for f in self._FIELDS}
+
+
+class CostingSettings(Base):
+    """The editable percentage markups for a proposal's costing sheet (one row per
+    proposal). Drives the Cost Summary waterfall: Total → +Contingency → +Overheads
+    → +Profit → +Income Tax → +VAT → Suggested Pricing. Percentages are whole
+    numbers (10 = 10%)."""
+
+    __tablename__ = "costing_settings"
+
+    projectId: Mapped[str] = mapped_column(String, primary_key=True)
+    contingencyPct: Mapped[float] = mapped_column(Float, default=10)
+    overheadsPct: Mapped[float] = mapped_column(Float, default=15)
+    profitPct: Mapped[float] = mapped_column(Float, default=25)
+    incomeTaxPct: Mapped[float] = mapped_column(Float, default=15)
+    # Excel leaves VAT blank, so it defaults to 0 (kept configurable) — see
+    # costing_service.compute_summary for the exact Excel-parity waterfall.
+    vatPct: Mapped[float] = mapped_column(Float, default=0)
+    updatedAt: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+
+    _FIELDS = (
+        "projectId", "contingencyPct", "overheadsPct", "profitPct",
+        "incomeTaxPct", "vatPct", "updatedAt",
+    )
+
+    def to_dict(self) -> dict:
+        return {f: getattr(self, f) for f in self._FIELDS}
+
+
 class PortalOTP(Base):
     """The active one-time code for a client portal link (one row per link).
     The code itself is stored hashed; rows expire and are deleted on use."""

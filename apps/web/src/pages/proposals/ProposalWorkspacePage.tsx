@@ -1,11 +1,12 @@
 import { useMemo, useState } from "react";
 import { Link, useParams } from "react-router-dom";
-import { ArrowLeft, Building2, FileSignature, ListChecks, Loader2, Paperclip, Sparkles } from "lucide-react";
+import { ArrowLeft, Building2, Calculator, FileSignature, ListChecks, Loader2, Paperclip, Sparkles } from "lucide-react";
 import { Card, CardHeader } from "@/components/ui/Card";
 import { Tabs } from "@/components/ui/Tabs";
 import { DocumentsPanel } from "@/components/DocumentsPanel";
 import { UploadedDocsList } from "@/components/client/UploadedDocsList";
 import { ProposalDelayEventsTab } from "@/components/proposals/ProposalDelayEventsTab";
+import { ProposalCostSheetTab } from "@/components/proposals/ProposalCostSheetTab";
 import { ProposalCostingTab } from "@/components/proposals/ProposalCostingTab";
 import { useProjectDocuments, useCreateProjectDoc, useAnalyzePendingDocs } from "@/hooks/useProjectDocuments";
 import { useProjectClients } from "@/hooks/useAssignments";
@@ -101,7 +102,8 @@ export function ProposalWorkspacePage() {
         tabs={[
           { id: "documents", label: "1 · Documents", icon: Paperclip, count: docs.length },
           { id: "events", label: "2 · Delay Events", icon: ListChecks },
-          { id: "proposal", label: "3 · Proposal", icon: FileSignature },
+          { id: "costing", label: "3 · Costing", icon: Calculator },
+          { id: "proposal", label: "4 · Proposal", icon: FileSignature },
         ]}
       />
 
@@ -151,7 +153,10 @@ export function ProposalWorkspacePage() {
         {/* ── 2 · Delay Events ── */}
         {tab === "events" && <ProposalDelayEventsTab proposalId={id} />}
 
-        {/* ── 3 · Proposal ── */}
+        {/* ── 3 · Costing (employee-hours costing sheet; standalone) ── */}
+        {tab === "costing" && <ProposalCostSheetTab proposalId={id} />}
+
+        {/* ── 4 · Proposal (existing AI proposal generation — unchanged) ── */}
         {tab === "proposal" && <ProposalCostingTab proposalId={id} />}
       </div>
     </>
