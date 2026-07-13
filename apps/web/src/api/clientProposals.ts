@@ -13,6 +13,10 @@ export interface CostingLine {
   /** Indicative timeline for the line (e.g. "Week 1-3"); may be empty. */
   timeline?: string;
   amount: number;
+  /** A group header ("Delay Analysis"); its amount is the subtotal of its children. */
+  group?: boolean;
+  /** A sub-line nested under the group header above it. */
+  sub?: boolean;
 }
 
 /** An admin-priced commercial line item (amount kept as a string for the form). */
@@ -21,6 +25,10 @@ export interface ProposalLineItem {
   timeline?: string;
   description?: string;
   amount: string;
+  /** A group header ("Delay Analysis") — priced by its children, not directly. */
+  group?: boolean;
+  /** A delay-event line nested under the group header above it. */
+  sub?: boolean;
 }
 
 /** Admin-entered fields that steer proposal generation. */

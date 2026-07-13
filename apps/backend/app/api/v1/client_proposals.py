@@ -19,11 +19,16 @@ _NOT_CONFIGURED = (
 async def get_client_proposal(project_id: str, current_user=Depends(get_current_user)):
     """The proposal's generated costed client proposal + generation status.
 
-    A logged-in client may only read a proposal for a project assigned to them."""
+    A logged-in client may only read a proposal for a project assigned to them.
+    For staff, reading also assigns the proposal its AQMS reference if it has none,
+    so the form opens pre-filled."""
     if current_user.get("role") == "Client View":
         if project_id not in project_ids_for_client(current_user["id"]):
             raise HTTPException(status_code=403, detail="This proposal isn't linked to your account.")
-    return client_proposal_service.get_proposal(project_id)
+        return client_proposal_service.get_proposal(project_id)
+    if not project_service.get_project(project_id):
+        raise HTTPException(status_code=404, detail="Proposal not found")
+    return client_proposal_service.ensure_reference(project_id)
 
 
 @router.put("/project/{project_id}/inputs")

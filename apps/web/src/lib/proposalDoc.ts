@@ -26,6 +26,7 @@ import {
 } from "docx";
 import type { ClientProposal } from "@/api/clientProposals";
 import { formatCurrencyFull } from "@/lib/utils";
+import { rowNumbers } from "@/lib/proposalCosting";
 
 type Content = NonNullable<ClientProposal["content"]>;
 
@@ -133,6 +134,7 @@ function bodyParagraphs(body: string): Paragraph[] {
 function commercialTable(doc: Content): (Paragraph | Table)[] {
   if (!doc.costing?.length) return [];
   const showTimeline = doc.costing.some((c) => (c.timeline ?? "").trim());
+  const numbers = rowNumbers(doc.costing);
   const th = (t: string, align?: (typeof AlignmentType)[keyof typeof AlignmentType]) =>
     new TableCell({
       shading: { type: ShadingType.CLEAR, fill: "EEF1F6", color: "auto" },
@@ -155,13 +157,23 @@ function commercialTable(doc: Content): (Paragraph | Table)[] {
       (c, i) =>
         new TableRow({
           children: [
-            td([new TextRun({ text: String(i + 1), size: 20 })], AlignmentType.CENTER),
-            td([
-              new TextRun({ text: c.item, bold: true, size: 21 }),
-              ...(c.description ? [new TextRun({ break: 1, text: c.description, size: 19, color: GREY })] : []),
-            ]),
-            ...(showTimeline ? [td([new TextRun({ text: c.timeline ?? "", size: 20 })])] : []),
-            td([new TextRun({ text: formatCurrencyFull(c.amount, doc.currency), size: 21 })], AlignmentType.RIGHT),
+            td([new TextRun({ text: numbers[i], size: 20 })], AlignmentType.CENTER),
+            new TableCell({
+              // Nested delay-event lines sit indented under their group header.
+              children: [
+                new Paragraph({
+                  indent: c.sub ? { left: 240 } : undefined,
+                  children: [
+                    new TextRun({ text: c.item, bold: true, size: 21, color: c.group ? NAVY : undefined }),
+                    ...(c.description ? [new TextRun({ break: 1, text: c.description, size: 19, color: GREY })] : []),
+                  ],
+                }),
+              ],
+            }),
+            ...(showTimeline ? [td([new TextRun({ text: c.group ? "" : c.timeline ?? "", size: 20 })])] : []),
+            // A group header is priced by its sub-lines — printing the subtotal here
+            // too would read as double-counting against the total.
+            td([new TextRun({ text: c.group ? "" : formatCurrencyFull(c.amount, doc.currency), size: 21 })], AlignmentType.RIGHT),
           ],
         }),
     ),
