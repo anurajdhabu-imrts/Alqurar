@@ -12,6 +12,7 @@ import {
   X,
 } from "lucide-react";
 import { Card, CardHeader } from "@/components/ui/Card";
+import { ProposalDocumentView } from "@/components/proposals/ProposalDocumentView";
 import {
   useClientProposal,
   useGenerateClientProposal,
@@ -21,7 +22,8 @@ import { useDelayEvents } from "@/hooks/useDelayEvents";
 import { useProjectById } from "@/store/projects";
 import type { ProposalInputs, ProposalLineItem } from "@/api/clientProposals";
 import type { ProjectDelayEvent } from "@/types";
-import { formatCurrencyFull, formatDate } from "@/lib/utils";
+import { formatCurrencyFull } from "@/lib/utils";
+import { DELAY_GROUP_DESC, DELAY_GROUP_ITEM, groupSubtotal, rowNumbers } from "@/lib/proposalCosting";
 
 const TODAY = new Date().toISOString().slice(0, 10);
 const CURRENCIES = ["OMR", "AED", "USD", "SAR", "QAR", "KWD", "BHD"];
@@ -39,6 +41,14 @@ const ANCHOR_LAST: ProposalLineItem = {
   timeline: "",
   amount: "",
 };
+/** Header the identified delay events are nested under; priced by its children. */
+const DELAY_GROUP: ProposalLineItem = {
+  item: DELAY_GROUP_ITEM,
+  description: DELAY_GROUP_DESC,
+  timeline: "",
+  amount: "",
+  group: true,
+};
 
 /** Parse an admin amount string ("1,200", "OMR 400") to a number. */
 function parseNum(v?: string): number {
@@ -53,22 +63,31 @@ function shortDesc(text: string): string {
   return clean.slice(0, 137).trimEnd() + "…";
 }
 
-/** Turn the identified delay events into priced line items (amount left blank). */
+/** Turn the identified delay events into priced sub-lines of the Delay Analysis group. */
 function eventsToLines(events: ProjectDelayEvent[]): ProposalLineItem[] {
-  return events.map((e) => ({ item: e.title, description: shortDesc(e.narrative), timeline: "", amount: "" }));
+  return events.map((e) => ({ item: e.title, description: shortDesc(e.narrative), timeline: "", amount: "", sub: true }));
 }
 
-/** Build the full line-items list: anchor-first, delay-event lines, anchor-last. */
+const FIXED_ITEMS = [ANCHOR_FIRST.item, ANCHOR_LAST.item, DELAY_GROUP.item];
+
+/**
+ * Build the full line-items list: anchor-first, the Delay Analysis group header with
+ * one sub-line per delay event, any custom lines, then anchor-last.
+ */
 function buildLineItems(saved: ProposalLineItem[] | undefined, events: ProjectDelayEvent[]): ProposalLineItem[] {
   if (saved?.length) {
-    // Ensure anchors exist at first/last positions; preserve saved content.
-    const inner = saved.filter((l) => l.item !== ANCHOR_FIRST.item && l.item !== ANCHOR_LAST.item);
+    // Ensure the anchors and the group header exist; preserve saved content.
     const first = saved.find((l) => l.item === ANCHOR_FIRST.item) ?? { ...ANCHOR_FIRST };
     const last = saved.find((l) => l.item === ANCHOR_LAST.item) ?? { ...ANCHOR_LAST };
-    return [first, ...inner, last];
+    const group = saved.find((l) => l.item === DELAY_GROUP.item) ?? { ...DELAY_GROUP };
+    const inner = saved.filter((l) => !FIXED_ITEMS.includes(l.item));
+    // Proposals saved before grouping have flat event lines — nest them.
+    const nested = inner.filter((l) => l.sub ?? true).map((l) => ({ ...l, sub: true }));
+    const extras = inner.filter((l) => l.sub === false);
+    return [first, { ...group, group: true }, ...nested, ...extras, last];
   }
-  const eventLines = events.length ? eventsToLines(events) : [{ item: "", timeline: "", description: "", amount: "" }];
-  return [{ ...ANCHOR_FIRST }, ...eventLines, { ...ANCHOR_LAST }];
+  const eventLines = events.length ? eventsToLines(events) : [{ item: "", timeline: "", description: "", amount: "", sub: true }];
+  return [{ ...ANCHOR_FIRST }, { ...DELAY_GROUP }, ...eventLines, { ...ANCHOR_LAST }];
 }
 
 /** Build the form state from stored inputs, seeding prices from the delay events. */
@@ -136,14 +155,22 @@ export function ProposalCostingTab({ proposalId }: { proposalId: string }) {
       return { ...f, lineItems: next };
     });
   }
+  /** Add a custom, ungrouped line just above the closing anchor. */
   function addLine() {
-    setForm((f) => ({ ...f, lineItems: [...(f.lineItems ?? []), { item: "", timeline: "", description: "", amount: "" }] }));
+    setForm((f) => {
+      const next = [...(f.lineItems ?? [])];
+      const line: ProposalLineItem = { item: "", timeline: "", description: "", amount: "", sub: false };
+      const at = next.findIndex((l) => l.item === ANCHOR_LAST.item);
+      if (at === -1) next.push(line);
+      else next.splice(at, 0, line);
+      return { ...f, lineItems: next };
+    });
   }
   function removeLine(i: number) {
     setForm((f) => ({ ...f, lineItems: (f.lineItems ?? []).filter((_, x) => x !== i) }));
   }
-  /** Reset the delay-event lines from the current events, keeping any prices and timelines
-   *  already typed and preserving the two anchor lines. */
+  /** Reset the delay-event sub-lines from the current events, keeping any prices and
+   *  timelines already typed and preserving the anchors, group header and custom lines. */
   function reloadFromEvents() {
     setForm((f) => {
       const savedVals = new Map((f.lineItems ?? []).map((l) => [l.item, { amount: l.amount, timeline: l.timeline }]));
@@ -154,11 +181,15 @@ export function ProposalCostingTab({ proposalId }: { proposalId: string }) {
       }));
       const first = f.lineItems?.find((l) => l.item === ANCHOR_FIRST.item) ?? { ...ANCHOR_FIRST };
       const last = f.lineItems?.find((l) => l.item === ANCHOR_LAST.item) ?? { ...ANCHOR_LAST };
-      return { ...f, lineItems: [first, ...eventLines, last] };
+      const group = f.lineItems?.find((l) => l.item === DELAY_GROUP.item) ?? { ...DELAY_GROUP };
+      const extras = (f.lineItems ?? []).filter((l) => l.sub === false && !FIXED_ITEMS.includes(l.item));
+      return { ...f, lineItems: [first, { ...group, group: true }, ...eventLines, ...extras, last] };
     });
   }
 
-  const previewTotal = lines.reduce((s, l) => s + parseNum(l.amount), 0) - parseNum(form.discount);
+  const numbers = rowNumbers(lines);
+  // Group headers carry no price of their own — their children are the priced lines.
+  const previewTotal = lines.reduce((s, l) => (l.group ? s : s + parseNum(l.amount)), 0) - parseNum(form.discount);
 
   function onLogoFile(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0];
@@ -266,7 +297,8 @@ export function ProposalCostingTab({ proposalId }: { proposalId: string }) {
             <div className="grid sm:grid-cols-2 gap-4">
               <div>
                 <label className="label" htmlFor="pr-ref">Proposal reference</label>
-                <input id="pr-ref" className="input" placeholder="AQMS/Proposal/26/13 (auto if blank)" value={form.reference ?? ""} onChange={set("reference")} />
+                <input id="pr-ref" className="input" placeholder="AQMS/Proposal/26/13" value={form.reference ?? ""} onChange={set("reference")} />
+                <p className="mt-1 text-xs text-faint">Auto-assigned; edit only if this proposal needs a specific reference.</p>
               </div>
               <div>
                 <label className="label" htmlFor="pr-date">Proposal date</label>
@@ -329,14 +361,33 @@ export function ProposalCostingTab({ proposalId }: { proposalId: string }) {
                 )}
                 {lines.map((l, i) => {
                   const isAnchor = l.item === ANCHOR_FIRST.item || l.item === ANCHOR_LAST.item;
+                  // The group header is priced by its children, so it shows a subtotal
+                  // instead of a price input.
+                  if (l.group) {
+                    const subtotal = groupSubtotal(lines, i, (r) => parseNum(r.amount));
+                    return (
+                      <div key={i} className="flex items-start justify-between gap-3 rounded-lg border border-navy-200 bg-navy-50/50 px-3 py-2">
+                        <div className="min-w-0">
+                          <p className="text-sm font-semibold leading-snug text-navy-700">{numbers[i]}. {l.item}</p>
+                          {l.description && <p className="text-xs text-muted leading-snug mt-0.5">{l.description}</p>}
+                        </div>
+                        <p className="text-sm font-semibold tabular-nums text-navy-700 whitespace-nowrap pt-0.5">
+                          {formatCurrencyFull(subtotal, currency)}
+                        </p>
+                      </div>
+                    );
+                  }
                   return (
                     <div key={i} className={`grid grid-cols-12 gap-2 items-center rounded-lg border px-3 py-2 ${
                       isAnchor ? "border-navy-200 bg-navy-50/50" : "border-border"
-                    }`}>
+                    } ${l.sub ? "ml-4 sm:ml-6 border-l-2 border-l-navy-200" : ""}`}>
                       <div className="col-span-12 sm:col-span-6 min-w-0">
                         {l.item || l.description ? (
                           <>
-                            <p className={`text-sm font-medium leading-snug ${isAnchor ? "text-navy-700" : "text-ink"}`}>{l.item || "—"}</p>
+                            <p className={`text-sm font-medium leading-snug ${isAnchor ? "text-navy-700" : "text-ink"}`}>
+                              <span className="text-faint tabular-nums mr-1.5">{numbers[i]}</span>
+                              {l.item || "—"}
+                            </p>
                             {l.description && <p className="text-xs text-muted leading-snug mt-0.5">{l.description}</p>}
                           </>
                         ) : (
@@ -412,98 +463,13 @@ export function ProposalCostingTab({ proposalId }: { proposalId: string }) {
         </Card>
       ) : doc ? (
         <Card className="p-0 overflow-hidden">
-          <article className="px-6 py-6 sm:px-10 sm:py-8 max-w-3xl mx-auto">
-            <header className="border-b border-border pb-4 mb-6">
-              <div className="flex items-center justify-between gap-4 mb-4">
-                {proposal?.inputs?.logo ? (
-                  <img src={proposal.inputs.logo} alt="Client logo" className="h-12 max-w-48 object-contain" />
-                ) : (
-                  <span />
-                )}
-                <img src="/Al Qarar Logo.png" alt="Al Qarar" className="h-11 object-contain" />
-              </div>
-              <p className="text-[11px] uppercase tracking-wide text-faint inline-flex items-center gap-1.5">
-                <Sparkles className="size-3.5 text-amber-500" /> AI-generated draft
-                {proposal?.updatedAt ? ` · ${formatDate(proposal.updatedAt)}` : ""}
-              </p>
-              <h1 className="mt-2 text-xl font-bold text-ink leading-snug">{doc.title}</h1>
-              {(doc.reference || doc.date) && (
-                <p className="mt-1 text-xs text-muted">{[doc.reference, doc.date].filter(Boolean).join(" · ")}</p>
-              )}
-            </header>
-
-            <div className="space-y-6">
-              {doc.sections.map((s, i) => (
-                <section key={i}>
-                  <h2 className="text-sm font-semibold uppercase tracking-wide text-navy-700 mb-1.5">
-                    {i + 1}. {s.heading}
-                  </h2>
-                  <p className="text-sm text-ink/90 leading-relaxed whitespace-pre-wrap">{s.body}</p>
-                </section>
-              ))}
-            </div>
-
-            {/* Commercial proposal — costing table */}
-            {doc.costing.length > 0 && (() => {
-              const showTimeline = doc.costing.some((c) => c.timeline?.trim());
-              const totalCols = showTimeline ? 3 : 2;
-              return (
-                <section className="mt-8">
-                  <h2 className="text-sm font-semibold uppercase tracking-wide text-navy-700 mb-3">Commercial Proposal</h2>
-                  <div className="overflow-x-auto">
-                    <table className="w-full text-sm">
-                      <thead>
-                        <tr className="border-b border-border text-left text-xs uppercase tracking-wide text-faint">
-                          <th className="py-2 pr-3 font-semibold">Item</th>
-                          <th className="py-2 px-3 font-semibold">Description</th>
-                          {showTimeline && <th className="py-2 px-3 font-semibold whitespace-nowrap">Timeline</th>}
-                          <th className="py-2 pl-3 font-semibold text-right whitespace-nowrap">Amount</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {doc.costing.map((c, i) => (
-                          <tr key={i} className="border-b border-border/60 align-top">
-                            <td className="py-2.5 pr-3 font-medium text-ink">{c.item}</td>
-                            <td className="py-2.5 px-3 text-muted">{c.description}</td>
-                            {showTimeline && <td className="py-2.5 px-3 text-muted whitespace-nowrap">{c.timeline || "—"}</td>}
-                            <td className="py-2.5 pl-3 text-right tabular-nums text-ink whitespace-nowrap">
-                              {formatCurrencyFull(c.amount, doc.currency)}
-                            </td>
-                          </tr>
-                        ))}
-                      </tbody>
-                      <tfoot>
-                        <tr>
-                          <td colSpan={totalCols} className="py-3 pr-3 text-right font-semibold text-ink">Total</td>
-                          <td className="py-3 pl-3 text-right font-bold tabular-nums text-ink whitespace-nowrap">
-                            {formatCurrencyFull(doc.total, doc.currency)}
-                          </td>
-                        </tr>
-                      </tfoot>
-                    </table>
-                  </div>
-
-                  {doc.paymentTerms && doc.paymentTerms.length > 0 && (
-                    <div className="mt-5">
-                      <h3 className="text-xs font-semibold uppercase tracking-wide text-faint mb-2">Payment Terms</h3>
-                      <ul className="space-y-1.5">
-                        {doc.paymentTerms.map((t, i) => (
-                          <li key={i} className="flex gap-2 text-sm text-ink/90">
-                            <span className="text-navy-400 mt-1.5 size-1.5 rounded-full bg-navy-300 shrink-0" />
-                            <span>{t}</span>
-                          </li>
-                        ))}
-                      </ul>
-                    </div>
-                  )}
-                </section>
-              );
-            })()}
-
-            <p className="mt-8 pt-4 border-t border-border text-[11px] text-faint">
-              AI-generated draft{proposal?.model ? ` · ${proposal.model}` : ""}. Review and verify the scope and figures before issuing to the client.
-            </p>
-          </article>
+          <ProposalDocumentView
+            draft
+            content={doc}
+            clientLogo={proposal?.inputs?.logo}
+            updatedAt={proposal?.updatedAt}
+            model={proposal?.model}
+          />
         </Card>
       ) : null}
     </div>

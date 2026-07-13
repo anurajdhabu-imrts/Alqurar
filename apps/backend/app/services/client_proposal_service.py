@@ -8,6 +8,7 @@ EOT claim.
 """
 import asyncio
 import os
+import re
 from datetime import datetime, timezone
 from typing import Dict
 
@@ -39,6 +40,39 @@ def get_proposal(project_id: str) -> Dict:
             "status": "", "error": None, "updatedAt": None,
             "sentToClient": False, "sentAt": None,
         }
+
+
+_REF_RE = re.compile(r"^AQMS/Proposal/(\d{2})/(\d+)$")
+
+
+def _next_reference(db, yy: str) -> str:
+    """The next free 'AQMS/Proposal/<yy>/<nn>' for the year, derived from the
+    references already stored on other proposals."""
+    used = {
+        int(m.group(2))
+        for (inputs,) in db.query(ClientProposal.inputs).all()
+        if (m := _REF_RE.match(str((inputs or {}).get("reference") or "").strip()))
+        and m.group(1) == yy
+    }
+    return f"AQMS/Proposal/{yy}/{(max(used) + 1) if used else 1:02d}"
+
+
+def ensure_reference(project_id: str) -> Dict:
+    """Return the proposal row, assigning it the next sequential AQMS reference if
+    it doesn't have one yet, so the form opens with the number the proposal will be
+    issued under. Persisted on first read so the number can't be handed out twice."""
+    with SessionLocal() as db:
+        row = db.get(ClientProposal, project_id)
+        if row and str((row.inputs or {}).get("reference") or "").strip():
+            return row.to_dict()
+        if not row:
+            row = ClientProposal(projectId=project_id, createdAt=_now())
+            db.add(row)
+        yy = datetime.now(timezone.utc).strftime("%y")
+        row.inputs = {**(row.inputs or {}), "reference": _next_reference(db, yy)}
+        row.updatedAt = _now()
+        db.commit()
+        return row.to_dict()
 
 
 def _set(project_id: str, **fields) -> None:
@@ -73,7 +107,11 @@ def mark_sent(project_id: str) -> Dict:
 
 
 def save_inputs(project_id: str, inputs: Dict) -> Dict:
-    """Store the admin-entered proposal fields (merged) and return the row."""
+    """Store the admin-entered proposal fields (merged) and return the row.
+
+    If the proposal has already been generated, the commercial table and reference
+    are refreshed from the new inputs — prices, grouping and the reference are
+    admin-owned, so they don't need an AI regeneration to take effect."""
     with SessionLocal() as db:
         row = db.get(ClientProposal, project_id)
         if not row:
@@ -82,6 +120,8 @@ def save_inputs(project_id: str, inputs: Dict) -> Dict:
         merged = dict(row.inputs or {})
         merged.update({k: v for k, v in (inputs or {}).items()})
         row.inputs = merged
+        if row.content:
+            row.content = _apply_admin_fields(row.content, merged)
         row.updatedAt = _now()
         db.commit()
         return row.to_dict()
@@ -97,36 +137,84 @@ def _to_number(v) -> float:
         return 0.0
 
 
+def _children(priced: list, group_index: int) -> list:
+    """The sub-lines nested directly beneath the group header at `group_index`."""
+    out = []
+    for c in priced[group_index + 1:]:
+        if not c["sub"]:
+            break
+        out.append(c)
+    return out
+
+
 def _apply_admin_commercials(content: dict, inputs: dict) -> dict:
     """When the admin has priced the line items, use them verbatim as the costing
     (so the fees are exact, not AI-invented) and recompute the net total after any
-    special discount."""
+    special discount.
+
+    A group line (e.g. "Delay Analysis") carries no price of its own — it is priced
+    by the sub-lines nested under it, and shows their subtotal."""
     items = (inputs or {}).get("lineItems") or []
+    kept = [
+        it
+        for it in items
+        if str(it.get("item", "")).strip()
+        and (it.get("group") or str(it.get("amount", "")).strip())
+    ]
     priced = [
         {
             "item": str(it.get("item", "")).strip(),
             "description": str(it.get("description", "")).strip(),
             "timeline": str(it.get("timeline", "")).strip(),
             "amount": _to_number(it.get("amount")),
+            "group": bool(it.get("group")),
+            "sub": bool(it.get("sub")),
         }
-        for it in items
-        if str(it.get("item", "")).strip() and str(it.get("amount", "")).strip()
+        for it in kept
     ]
-    if not priced:
+    # Drop a group header whose sub-lines were all left unpriced.
+    priced = [
+        c
+        for i, c in enumerate(priced)
+        if not c["group"] or (i + 1 < len(priced) and priced[i + 1]["sub"])
+    ]
+    for i, c in enumerate(priced):
+        if c["group"]:
+            c["amount"] = sum(
+                s["amount"] for s in _children(priced, i)
+            )
+    if not any(not c["group"] for c in priced):
         return content
 
     costing = list(priced)
-    total = sum(c["amount"] for c in priced)
+    total = sum(c["amount"] for c in priced if not c["group"])
     discount = _to_number((inputs or {}).get("discount"))
     if discount > 0:
         costing.append(
-            {"item": "Less special discount", "description": "", "timeline": "", "amount": -discount}
+            {
+                "item": "Less special discount",
+                "description": "",
+                "timeline": "",
+                "amount": -discount,
+                "group": False,
+                "sub": False,
+            }
         )
         total -= discount
 
     content = dict(content)
     content["costing"] = costing
     content["total"] = total
+    return content
+
+
+def _apply_admin_fields(content: dict, inputs: dict) -> dict:
+    """Overlay everything the admin owns onto a generated proposal: the exact
+    prices and their grouping, and the assigned reference."""
+    content = _apply_admin_commercials(content, inputs)
+    reference = str((inputs or {}).get("reference") or "").strip()
+    if reference:
+        content = {**content, "reference": reference}
     return content
 
 
@@ -157,8 +245,9 @@ async def run_generation(project_id: str) -> None:
             content = await generate_client_proposal(
                 project=project, events=events, document_names=doc_names, inputs=inputs
             )
-            # Admin-entered prices are authoritative — override the AI's costing.
-            content = _apply_admin_commercials(content, inputs)
+            # Admin-entered prices and reference are authoritative — they override
+            # whatever the AI drafted.
+            content = _apply_admin_fields(content, inputs)
             _set(project_id, content=content, model=MODEL, status="done", error=None)
         except anthropic.AuthenticationError:
             _set(project_id, status="failed", error=_NOT_CONFIGURED)

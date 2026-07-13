@@ -1,6 +1,7 @@
 import { Sparkles } from "lucide-react";
 import type { ClientProposal } from "@/api/clientProposals";
 import { formatCurrencyFull, formatDate } from "@/lib/utils";
+import { rowNumbers } from "@/lib/proposalCosting";
 
 type Content = NonNullable<ClientProposal["content"]>;
 
@@ -14,14 +15,18 @@ export function ProposalDocumentView({
   clientLogo,
   updatedAt,
   model,
+  draft = false,
 }: {
   content: Content;
   clientLogo?: string;
   updatedAt?: string | null;
   model?: string | null;
+  /** Internal (staff) view — flags the proposal as an unreviewed AI draft. */
+  draft?: boolean;
 }) {
   const showTimeline = content.costing.some((c) => c.timeline?.trim());
-  const totalCols = showTimeline ? 3 : 2;
+  const totalCols = showTimeline ? 4 : 3;
+  const numbers = rowNumbers(content.costing);
 
   return (
     <article className="px-6 py-6 sm:px-10 sm:py-8 max-w-3xl mx-auto">
@@ -35,7 +40,8 @@ export function ProposalDocumentView({
           <img src="/Al Qarar Logo.png" alt="Al Qarar" className="h-11 object-contain" />
         </div>
         <p className="text-[11px] uppercase tracking-wide text-faint inline-flex items-center gap-1.5">
-          <Sparkles className="size-3.5 text-emerald-500" /> Proposal
+          <Sparkles className={`size-3.5 ${draft ? "text-amber-500" : "text-emerald-500"}`} />
+          {draft ? "AI-generated draft" : "Proposal"}
           {updatedAt ? ` · ${formatDate(updatedAt)}` : ""}
         </p>
         <h1 className="mt-2 text-xl font-bold text-ink leading-snug">{content.title}</h1>
@@ -64,7 +70,8 @@ export function ProposalDocumentView({
             <table className="w-full text-sm">
               <thead>
                 <tr className="border-b border-border text-left text-xs uppercase tracking-wide text-faint">
-                  <th className="py-2 pr-3 font-semibold">Item</th>
+                  <th className="py-2 pr-3 font-semibold text-right">Sl.No</th>
+                  <th className="py-2 px-3 font-semibold">Item</th>
                   <th className="py-2 px-3 font-semibold">Description</th>
                   {showTimeline && <th className="py-2 px-3 font-semibold whitespace-nowrap">Timeline</th>}
                   <th className="py-2 pl-3 font-semibold text-right whitespace-nowrap">Amount</th>
@@ -72,12 +79,17 @@ export function ProposalDocumentView({
               </thead>
               <tbody>
                 {content.costing.map((c, i) => (
-                  <tr key={i} className="border-b border-border/60 align-top">
-                    <td className="py-2.5 pr-3 font-medium text-ink">{c.item}</td>
+                  <tr key={i} className={`border-b border-border/60 align-top ${c.group ? "bg-navy-50/40" : ""}`}>
+                    <td className="py-2.5 pr-3 text-right tabular-nums text-faint whitespace-nowrap">{numbers[i]}</td>
+                    <td className={`py-2.5 px-3 text-ink ${c.group ? "font-semibold" : "font-medium"} ${c.sub ? "pl-6" : ""}`}>
+                      {c.item}
+                    </td>
                     <td className="py-2.5 px-3 text-muted">{c.description}</td>
-                    {showTimeline && <td className="py-2.5 px-3 text-muted whitespace-nowrap">{c.timeline || "—"}</td>}
+                    {/* A group header is priced by the sub-lines beneath it, so it shows no
+                        amount of its own — repeating the subtotal here reads as double-counting. */}
+                    {showTimeline && <td className="py-2.5 px-3 text-muted whitespace-nowrap">{c.group ? "" : c.timeline || "—"}</td>}
                     <td className="py-2.5 pl-3 text-right tabular-nums text-ink whitespace-nowrap">
-                      {formatCurrencyFull(c.amount, content.currency)}
+                      {c.group ? "" : formatCurrencyFull(c.amount, content.currency)}
                     </td>
                   </tr>
                 ))}
@@ -109,11 +121,15 @@ export function ProposalDocumentView({
         </section>
       )}
 
-      {model && (
+      {draft ? (
+        <p className="mt-8 pt-4 border-t border-border text-[11px] text-faint">
+          AI-generated draft{model ? ` · ${model}` : ""}. Review and verify the scope and figures before issuing to the client.
+        </p>
+      ) : model ? (
         <p className="mt-8 pt-4 border-t border-border text-[11px] text-faint">
           Prepared by Al Qarar Management Solutions.
         </p>
-      )}
+      ) : null}
     </article>
   );
 }

@@ -8,6 +8,7 @@
 import { jsPDF } from "jspdf";
 import type { ClientProposal } from "@/api/clientProposals";
 import { formatCurrencyFull } from "@/lib/utils";
+import { rowNumbers } from "@/lib/proposalCosting";
 
 type Content = NonNullable<ClientProposal["content"]>;
 type RGB = [number, number, number];
@@ -309,36 +310,45 @@ export function downloadProposalPdf(doc: Content, opts: ProposalPdfOpts): void {
       y = y0 + rowH;
     }
     // Data rows
+    const numbers = rowNumbers(doc.costing);
     doc.costing.forEach((c, i) => {
       pdf.setFontSize(size);
-      const itemLines = wrap([{ text: c.item, bold: true }], descW - 2 * pad, size);
-      const descLines = c.description ? wrap([{ text: c.description }], descW - 2 * pad, size - 1) : [];
+      // Nested delay-event lines are indented under their group header.
+      const indent = c.sub ? 12 : 0;
+      const textX = M + noW + pad + indent;
+      const textW = descW - 2 * pad - indent;
+      const itemLines = wrap([{ text: c.item, bold: true }], textW, size);
+      const descLines = c.description ? wrap([{ text: c.description }], textW, size - 1) : [];
       const rowH = Math.max((itemLines.length + descLines.length) * lh + 2 * pad, 30);
       ensure(rowH);
       const y0 = y;
       borders(y0, rowH);
       setFont(false, false);
       setColor(BODY);
-      center(String(i + 1), M, noW, y0 + rowH / 2 + size / 3);
+      center(numbers[i], M, noW, y0 + rowH / 2 + size / 3);
       let dy = y0 + pad + size * 0.9;
       itemLines.forEach((ln) => {
-        drawRunLine(ln, M + noW + pad, dy, size, BODY);
+        drawRunLine(ln, textX, dy, size, c.group ? NAVY : BODY);
         dy += lh;
       });
       descLines.forEach((ln) => {
-        drawRunLine(ln, M + noW + pad, dy, size - 1, GREY);
+        drawRunLine(ln, textX, dy, size - 1, GREY);
         dy += (size - 1) * 1.3;
       });
       if (showTL) {
         setFont(false, false);
         setColor(BODY);
         pdf.setFontSize(size);
-        pdf.text(c.timeline || "", M + noW + descW + pad, y0 + rowH / 2 + size / 3);
+        pdf.text(c.group ? "" : c.timeline || "", M + noW + descW + pad, y0 + rowH / 2 + size / 3);
       }
-      setFont(false, false);
-      setColor(BODY);
-      pdf.setFontSize(size);
-      right(formatCurrencyFull(c.amount, doc.currency), M + contentW - pad, y0 + rowH / 2 + size / 3);
+      // A group header is priced by its sub-lines — printing the subtotal here too
+      // would read as double-counting against the total.
+      if (!c.group) {
+        setFont(false, false);
+        setColor(BODY);
+        pdf.setFontSize(size);
+        right(formatCurrencyFull(c.amount, doc.currency), M + contentW - pad, y0 + rowH / 2 + size / 3);
+      }
       y = y0 + rowH;
     });
     // Total row
