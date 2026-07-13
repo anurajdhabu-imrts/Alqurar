@@ -14,6 +14,7 @@ import {
   Library,
   Settings,
   ShieldCheck,
+  UserCog,
   Users,
   type LucideIcon,
 } from "lucide-react";
@@ -69,6 +70,7 @@ const sections: { heading: string; items: NavItem[] }[] = [
     heading: "Administration",
     items: [
       { to: "/clients", label: "Clients", icon: Building2, permission: "admin.users" },
+      { to: "/employees", label: "Employees", icon: UserCog, permission: "admin.users" },
       { to: "/users", label: "Users", icon: Users, permission: "admin.users" },
       { to: "/roles", label: "Roles & Permissions", icon: ShieldCheck, permission: "admin.roles" },
     ],

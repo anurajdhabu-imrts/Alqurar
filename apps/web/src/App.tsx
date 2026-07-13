@@ -32,6 +32,7 @@ import { UsersPage } from "@/pages/admin/UsersPage";
 import { CreateUserPage } from "@/pages/admin/CreateUserPage";
 import { ClientsPage } from "@/pages/admin/ClientsPage";
 import { RegisterClientPage } from "@/pages/admin/RegisterClientPage";
+import { EmployeesPage } from "@/pages/employees/EmployeesPage";
 import { ProjectsPage } from "@/pages/projects/ProjectsPage";
 import { CreateProjectPage } from "@/pages/projects/CreateProjectPage";
 import { ProposalsPage } from "@/pages/proposals/ProposalsPage";
@@ -122,6 +123,7 @@ export default function App() {
               <Route path="/knowledge/:bookId" element={<BookDetailPage />} />
               <Route path="/clients" element={<ClientsPage />} />
               <Route path="/clients/new" element={<RegisterClientPage />} />
+              <Route path="/employees" element={<EmployeesPage />} />
               <Route path="/users" element={<UsersPage />} />
               <Route path="/users/new" element={<CreateUserPage />} />
               <Route path="/users/:id/edit" element={<CreateUserPage />} />

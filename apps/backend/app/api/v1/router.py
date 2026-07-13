@@ -1,6 +1,6 @@
 from fastapi import APIRouter
 
-from app.api.v1 import auth, users, roles, permissions, documents, assignments, clauses, projects, project_documents, project_clauses, client_profiles, delay_events, portal, proposals, client_proposals, dashboard, knowledge
+from app.api.v1 import auth, users, roles, permissions, documents, assignments, clauses, projects, project_documents, project_clauses, client_profiles, delay_events, portal, proposals, client_proposals, dashboard, knowledge, employees, costing
 
 api_router = APIRouter()
 
@@ -19,5 +19,7 @@ api_router.include_router(delay_events.router, prefix="/delay-events", tags=["de
 api_router.include_router(proposals.router, prefix="/proposals", tags=["proposals"])
 api_router.include_router(client_proposals.router, prefix="/client-proposals", tags=["client-proposals"])
 api_router.include_router(knowledge.router, prefix="/knowledge", tags=["knowledge-center"])
+api_router.include_router(employees.router, prefix="/employees", tags=["employees"])
+api_router.include_router(costing.router, prefix="/costing", tags=["costing"])
 api_router.include_router(portal.router, prefix="/portal", tags=["portal"])
 api_router.include_router(dashboard.router, prefix="/dashboard", tags=["dashboard"])
