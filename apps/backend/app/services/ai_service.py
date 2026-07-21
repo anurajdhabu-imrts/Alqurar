@@ -5,8 +5,10 @@ document and returns a structured JSON summary (what the document is about and
 how it relates to an Extension-of-Time claim).
 """
 
+import asyncio
 import base64
 import json
+import logging
 import os
 from datetime import datetime, timezone
 from functools import lru_cache
@@ -16,6 +18,8 @@ import anthropic
 from dotenv import load_dotenv
 
 from app.schemas.document import DocumentAnalysis
+
+logger = logging.getLogger(__name__)
 
 # Load apps/backend/.env explicitly (works regardless of the working directory)
 # so ANTHROPIC_API_KEY / ANTHROPIC_MODEL are available.
@@ -89,8 +93,10 @@ _OUTPUT_SCHEMA = {
 
 @lru_cache(maxsize=1)
 def _client() -> anthropic.AsyncAnthropic:
-    # Resolves ANTHROPIC_API_KEY from the environment.
-    return anthropic.AsyncAnthropic()
+    # Resolves ANTHROPIC_API_KEY from the environment. A generous per-request
+    # timeout (and a few built-in retries) so a long streamed extraction — e.g. a
+    # whole contract book — is never cut short by the SDK's default time limit.
+    return anthropic.AsyncAnthropic(timeout=900.0, max_retries=4)
 
 
 # ── OCR (for scanned PDFs / images) ─────────────────────────────────────────
@@ -105,11 +111,14 @@ _IMAGE_MEDIA = {
 }
 
 
-async def ocr_document(raw: bytes, filename: str, mime: str | None = None) -> str:
+async def ocr_document(
+    raw: bytes, filename: str, mime: str | None = None, model: str | None = None
+) -> str:
     """Transcribe a scanned PDF or image to plain text via Claude vision.
 
     Returns "" if the file is too large, an unsupported type, or OCR fails — the
-    caller then falls back to filename-only classification.
+    caller then falls back to filename-only classification. `model` overrides the
+    default vision model (used to route through a model known to be enabled).
     """
     if not raw or len(raw) > _OCR_MAX_BYTES:
         return ""
@@ -137,16 +146,142 @@ async def ocr_document(raw: bytes, filename: str, mime: str | None = None) -> st
 
     try:
         async with _client().messages.stream(
-            model=ANALYSIS_MODEL,
+            model=model or ANALYSIS_MODEL,
             max_tokens=8000,
             messages=[{"role": "user", "content": [file_block, {"type": "text", "text": instruction}]}],
         ) as stream:
             response = await stream.get_final_message()
-    except Exception:
+    except Exception as e:  # noqa: BLE001
+        logger.warning("ocr_document failed for %s: %s", filename, e)
         return ""
 
     text = "".join(b.text for b in response.content if b.type == "text").strip()
     return text[:MAX_OCR_CHARS]
+
+
+# ── Robust PDF OCR by page rendering ────────────────────────────────────────
+# A single "document" block fails for a PDF over the API's page/size limits (a
+# large scanned contract can be hundreds of pages). Instead render each page to
+# an image with PyMuPDF and transcribe the pages in small batches — this works
+# for scanned PDFs of any length and stays under per-request limits.
+#
+# Pages are rendered as DOWNSCALED JPEG: a high-resolution colour scan as PNG can
+# be 5-15 MB per page and blow past the API's ~5 MB-per-image limit (so every
+# vision call is rejected and OCR silently returns nothing). JPEG capped at a
+# ~1600 px long edge keeps each page well under a megabyte.
+_OCR_PAGE_DPI = 150                                     # legible without bloating tokens
+_OCR_MAX_LONG_EDGE = 1600                               # API downsizes above ~1568 px anyway
+_OCR_JPEG_QUALITY = int(os.getenv("OCR_JPEG_QUALITY", "70"))
+_OCR_MAX_PAGES = int(os.getenv("OCR_MAX_PAGES", "80"))   # cap work on a huge document
+_OCR_PAGE_BATCH = int(os.getenv("OCR_PAGE_BATCH", "3"))  # pages per vision request
+_OCR_CONCURRENCY = int(os.getenv("OCR_CONCURRENCY", "5"))  # vision requests in flight at once
+
+
+def _render_pdf_pages(raw: bytes, max_pages: int) -> list[bytes]:
+    """Render up to `max_pages` PDF pages to compact JPEG bytes (PyMuPDF). Blocking.
+
+    Each page is rendered at ~150 DPI, downscaled so its long edge is ≤ ~1600 px,
+    and encoded as JPEG — small enough to stay under the API's per-image limit.
+    A page that fails to render is skipped rather than aborting the whole file.
+    """
+    import fitz  # PyMuPDF
+
+    images: list[bytes] = []
+    with fitz.open(stream=raw, filetype="pdf") as doc:
+        for i, page in enumerate(doc):
+            if i >= max_pages:
+                break
+            try:
+                pix = page.get_pixmap(dpi=_OCR_PAGE_DPI)
+                long_edge = max(pix.width, pix.height)
+                if long_edge > _OCR_MAX_LONG_EDGE:
+                    scale = _OCR_MAX_LONG_EDGE / long_edge
+                    pix = page.get_pixmap(matrix=fitz.Matrix(scale * _OCR_PAGE_DPI / 72,
+                                                             scale * _OCR_PAGE_DPI / 72))
+                # JPEG has no alpha; get_pixmap defaults to alpha=False so this is safe.
+                images.append(pix.tobytes("jpg", jpg_quality=_OCR_JPEG_QUALITY))
+            except Exception as e:  # noqa: BLE001 — skip an unreadable page, keep the rest
+                logger.warning("ocr_pdf_pages: page %d failed to render: %s", i, e)
+    return images
+
+
+async def ocr_pdf_pages(
+    raw: bytes,
+    *,
+    max_pages: int = _OCR_MAX_PAGES,
+    max_chars: int = MAX_OCR_CHARS,
+    model: str | None = None,
+) -> tuple[str, str]:
+    """Transcribe a (possibly scanned, possibly large) PDF page by page.
+
+    Renders each page to a compact image and OCRs the pages in batches with Claude
+    vision, so it is not bound by the API's whole-PDF page/size limits. Returns
+    (text, error): `error` is "" on success, otherwise a short reason (the file
+    couldn't be rendered, or the vision calls failed) suitable for surfacing.
+    """
+    if not raw:
+        return "", "empty file"
+    try:
+        images = await asyncio.to_thread(_render_pdf_pages, raw, max_pages)
+    except Exception as e:  # noqa: BLE001
+        logger.warning("ocr_pdf_pages: could not render PDF: %s", e)
+        return "", f"could not render PDF ({type(e).__name__})"
+    if not images:
+        logger.warning("ocr_pdf_pages: PDF rendered 0 pages")
+        return "", "PDF rendered no pages"
+
+    instruction = (
+        "Transcribe ALL text in these document pages verbatim as plain text, in "
+        "reading order, preserving clause numbers and tables as best you can. Output "
+        "only the transcription, with no commentary."
+    )
+
+    # Batches are transcribed concurrently (bounded by _OCR_CONCURRENCY) — a large
+    # scan is dozens of vision calls, and running them back-to-back took many
+    # minutes. Results are re-joined in page order.
+    sem = asyncio.Semaphore(_OCR_CONCURRENCY)
+
+    async def _transcribe_batch(start: int) -> tuple[str, str]:
+        """Returns (text, error) for the batch beginning at page `start`."""
+        batch = images[start:start + _OCR_PAGE_BATCH]
+        content = [
+            {
+                "type": "image",
+                "source": {
+                    "type": "base64",
+                    "media_type": "image/jpeg",
+                    "data": base64.standard_b64encode(img).decode("ascii"),
+                },
+            }
+            for img in batch
+        ]
+        content.append({"type": "text", "text": instruction})
+        async with sem:
+            try:
+                async with _client().messages.stream(
+                    model=model or ANALYSIS_MODEL,
+                    max_tokens=8000,
+                    messages=[{"role": "user", "content": content}],
+                ) as stream:
+                    response = await stream.get_final_message()
+            except Exception as e:  # noqa: BLE001
+                logger.warning("ocr_pdf_pages: vision call failed on batch at page %d: %s", start, e)
+                return "", f"{type(e).__name__}: {str(e)[:160]}"
+        return "".join(b.text for b in response.content if b.type == "text").strip(), ""
+
+    results = await asyncio.gather(
+        *(_transcribe_batch(start) for start in range(0, len(images), _OCR_PAGE_BATCH))
+    )
+    parts = [text for text, _err in results if text]
+    last_err = next((err for _text, err in reversed(results) if err), "")
+    ok_batches = sum(1 for _text, err in results if not err)
+
+    text = "\n\n".join(parts).strip()[:max_chars]
+    if text:
+        return text, ""
+    if ok_batches and not last_err:
+        return "", "pages transcribed as blank (no readable text on the pages)"
+    return "", last_err or "vision OCR produced no text"
 
 
 def _build_user_content(text: str, filename: str, truncated: bool, claim_context: str) -> str:
@@ -225,6 +360,15 @@ _EVENTS_SYSTEM_PROMPT = (
     "- If the documents contain no evidence of any delay event, return an empty list.\n"
     "- 'cause' attributes responsibility: 'Employer' (incl. Engineer), "
     "'Contractor', 'Concurrent', 'Force Majeure', or 'Neutral'.\n"
+    "- 'clause' is the contractual basis of the event. When the input includes a "
+    "PROJECT CLAUSE LIBRARY section, you MUST choose from that library: cite the "
+    "clause number(s) whose provisions entitle the party to relief for this event, "
+    "copied EXACTLY as numbered there (e.g. 'Sub-Clause 8.5, Sub-Clause 20.2'). Do "
+    "not cite clause numbers from memory or from a different contract edition — a "
+    "number not present in the library is wrong unless the documents themselves "
+    "quote it. A library clause marked [Modified by Particular Conditions] applies "
+    "as amended. Only when no clause library is provided may you cite the clause "
+    "evidenced by the document text alone.\n"
     "- 'admissibility' is your view of whether the event would succeed as an EOT "
     "claim: 'Likely admissible', 'At risk', 'Inadmissible', or 'Not assessed'.\n"
     "- 'daysImpact' is the integer number of days of delay; 0 if unknown.\n"
@@ -291,17 +435,47 @@ _EVENTS_OUTPUT_SCHEMA = {
 }
 
 
+def _clause_library_block(clauses: list[dict]) -> str:
+    """Render a project's Clause Library as a prompt section the model cites from.
+
+    One line per clause — exact number, title, a trimmed summary and the PCC
+    modification flag — so events can only reference clauses that actually exist
+    in this project's library.
+    """
+    lines = ["\n===== PROJECT CLAUSE LIBRARY (the 'clause' field must cite these exact numbers) ====="]
+    for c in clauses:
+        num = (c.get("clause_number") or "").strip()
+        title = (c.get("clause_title") or "").strip()
+        if not num and not title:
+            continue
+        desc = " ".join((c.get("clause_description") or "").split())
+        if len(desc) > 220:
+            desc = desc[:220].rstrip() + "…"
+        line = f"- {num} — {title}" if num else f"- {title}"
+        if desc:
+            line += f": {desc}"
+        if c.get("modified"):
+            note = " ".join((c.get("modification_note") or "").split())
+            line += f" [Modified by Particular Conditions{': ' + note if note else ''}]"
+        lines.append(line)
+    return "\n".join(lines)
+
+
 async def extract_delay_events(
     *,
     documents: list[dict],
     standard: str | None = None,
     project_name: str | None = None,
+    clauses: list[dict] | None = None,
 ) -> list[dict]:
     """Draft a register of delay events from the project's documents.
 
-    `documents` is a list of {"name", "type", "text", "truncated"} dicts. Returns
-    a list of plain dicts (one per event) with the AI's structured fields plus the
-    raw `sourceDocuments` filenames — the caller maps those to source records.
+    `documents` is a list of {"name", "type", "text", "truncated"} dicts.
+    `clauses` is the project's Clause Library (project_clauses rows); when given,
+    each event's 'clause' field is constrained to cite those exact clause numbers,
+    so the Delay Events tab links straight back to the library. Returns a list of
+    plain dicts (one per event) with the AI's structured fields plus the raw
+    `sourceDocuments` filenames — the caller maps those to source records.
     """
     ctx_bits = []
     if project_name:
@@ -316,6 +490,10 @@ async def extract_delay_events(
         note = " (truncated)" if d.get("truncated") else ""
         body = d.get("text") or "(no machine-readable text — classify from the filename)"
         blocks.append(f"\n===== Document: {name} [{d.get('type', 'Other')}]{note} =====\n{body}")
+    # The library goes last so the exact clause numbers are freshest when the
+    # model writes each event's 'clause' field.
+    if clauses:
+        blocks.append(_clause_library_block(clauses))
     user_content = "\n".join(blocks)
 
     # Stream so a long generation doesn't hit the SDK's non-streaming timeout, and
@@ -377,7 +555,19 @@ _CLAUSES_SYSTEM_PROMPT = (
     "use the provided contract standard when given.\n"
     "- 'tags' are 2-4 short topical tags (e.g. 'EOT', 'notice', 'time-bar', 'variation').\n"
     "- Return at most ~40 clauses, ordered by how central they are to an EOT/delay claim.\n"
-    "- If the text contains no usable clauses, return an empty list."
+    "- If the text contains no usable clauses, return an empty list.\n\n"
+    "Particular Conditions INCLUDED in the document:\n"
+    "The contract may include its Particular Conditions — either as a separate PC "
+    "section, or as amendment instructions printed alongside the General Conditions "
+    "(e.g. 'insert the words … between …', 'add the following as a new paragraph at "
+    "the end of Sub-Clause …', 'delete Sub-Clause …'). Treat each instruction as an "
+    "amendment to the clause it references:\n"
+    "- 'clause_description' must describe the clause AS AMENDED — the net effect once "
+    "the Particular-Conditions changes are applied to the base wording.\n"
+    "- Set 'modified' to true when the Particular Conditions amend, replace or delete "
+    "the clause; otherwise false.\n"
+    "- 'modification_note' is one concise sentence stating what the Particular "
+    "Conditions change (empty string when 'modified' is false)."
 )
 
 _CLAUSE_ITEM_SCHEMA = {
@@ -388,10 +578,13 @@ _CLAUSE_ITEM_SCHEMA = {
         "clause_title": {"type": "string"},
         "clause_description": {"type": "string"},
         "tags": {"type": "array", "items": {"type": "string"}},
+        # Set when the document's own Particular Conditions amend this clause.
+        "modified": {"type": "boolean"},
+        "modification_note": {"type": "string"},
     },
     "required": [
         "contract_standard", "clause_number", "clause_title",
-        "clause_description", "tags",
+        "clause_description", "tags", "modified", "modification_note",
     ],
     "additionalProperties": False,
 }
@@ -431,8 +624,11 @@ async def extract_clauses(
 
     async with _client().messages.stream(
         model=EXTRACTION_MODEL,
-        max_tokens=8192,
-        thinking={"type": "adaptive"},
+        # Thinking disabled for the same reason as compare_pcc_to_book: on a
+        # book-sized contract adaptive thinking can consume the whole token
+        # budget before any JSON is emitted. 32k output covers ~40 clauses easily.
+        max_tokens=32000,
+        thinking={"type": "disabled"},
         system=[
             {
                 "type": "text",
@@ -448,8 +644,18 @@ async def extract_clauses(
     ) as stream:
         response = await stream.get_final_message()
 
-    payload = next((b.text for b in response.content if b.type == "text"), "")
-    return json.loads(payload).get("clauses", [])
+    payload = "".join(b.text for b in response.content if b.type == "text").strip()
+    if not payload:
+        raise ValueError(
+            "The AI returned no output for the clause extraction "
+            f"(stop_reason={response.stop_reason}). Please try again."
+        )
+    try:
+        return json.loads(payload).get("clauses", [])
+    except json.JSONDecodeError:
+        raise ValueError(
+            "The AI returned a malformed extraction result. Please try uploading the contract again."
+        ) from None
 
 
 # ── Knowledge Center: standard contract book clause extraction ──────────────
@@ -552,6 +758,190 @@ async def extract_book_clauses(
 
     payload = next((b.text for b in response.content if b.type == "text"), "")
     return json.loads(payload).get("clauses", [])
+
+
+# ── Particular Conditions (PCC) comparison ──────────────────────────────────
+# A project selects a base standard form (General Conditions) from the Knowledge
+# Center, and its clauses are copied into the project's Clause Library. The
+# analyst may then upload the project's Particular Conditions of Contract (PCC).
+# The PCC may be a short amendments-only document, or a full marked-up copy of the
+# contract. Either way Claude reads it against the base clauses and returns TWO
+# lists: base clauses the PCC AMENDS (flagged "Modified") and brand-NEW clauses
+# the PCC introduces that have no base equivalent (flagged "New clause").
+
+_PCC_SYSTEM_PROMPT = (
+    "You are a construction-contract specialist. A project uses a standard form "
+    "of contract (the General Conditions — e.g. a FIDIC Red/Yellow/Silver Book or "
+    "NEC4 form). You are given (1) the list of that form's base clauses already in "
+    "the project's library, each with its number, title and a short description, "
+    "and (2) the extracted text of the project's PARTICULAR CONDITIONS OF CONTRACT "
+    "(PCC / Particular Conditions / Conditions of Particular Application / Contract "
+    "Data). The PCC may be a short list of amendments, OR a full copy of the "
+    "contract with the General Conditions marked up — amended wording, deletions, "
+    "and entirely new sub-clauses inserted.\n\n"
+    "Compare the PCC against the base clauses and return TWO lists.\n\n"
+    "1) 'modifications' — base clauses from the provided list that the PCC AMENDS, "
+    "replaces or deletes. One entry per changed base clause:\n"
+    "- 'clause_number' MUST be the EXACT number of the matching BASE clause from the "
+    "list provided (not a number invented from the PCC).\n"
+    "- 'clause_title' is that base clause's title.\n"
+    "- 'modification_note' is one concise sentence stating what the PCC changes (e.g. "
+    "'PCC shortens the notice period from 28 to 21 days' or 'Sub-Clause deleted by "
+    "the Particular Conditions').\n"
+    "- 'new_description' is an updated one-or-two sentence plain-language description "
+    "of the clause AS AMENDED — what it now provides once the PCC is read with the "
+    "base clause.\n"
+    "Only include base clauses the PCC actually changes. Ignore untouched clauses.\n\n"
+    "2) 'additions' — brand-NEW clauses/sub-clauses the PCC introduces that do NOT "
+    "correspond to any base clause in the provided list (e.g. a new Sub-Clause the "
+    "Particular Conditions add). One entry per new clause:\n"
+    "- 'clause_number' is the number as written in the PCC (e.g. '1.15', '4.28'). If "
+    "the PCC gives no number, assign a sensible one based on where it sits.\n"
+    "- 'clause_title' is the heading as written, or a short descriptive one.\n"
+    "- 'clause_description' is a concise one-or-two sentence plain-language summary of "
+    "what the new clause provides.\n"
+    "- 'tags' are 2-4 short topical tags (e.g. 'EOT', 'notice', 'payment').\n\n"
+    "IMPORTANT distinctions:\n"
+    "- If a PCC provision changes an EXISTING base clause, it is a 'modification', "
+    "NOT an 'addition'. Never list the same clause in both.\n"
+    "- A clause counts as an 'addition' only if its number/subject is not already a "
+    "base clause.\n"
+    "- Base ONLY on the text provided. Do NOT invent numbers, wording or figures. If "
+    "there are no modifications, or no additions, return an empty list for that key."
+)
+
+_PCC_ITEM_SCHEMA = {
+    "type": "object",
+    "properties": {
+        "clause_number": {"type": "string"},
+        "clause_title": {"type": "string"},
+        "modification_note": {"type": "string"},
+        "new_description": {"type": "string"},
+    },
+    "required": ["clause_number", "clause_title", "modification_note", "new_description"],
+    "additionalProperties": False,
+}
+
+_PCC_ADDITION_SCHEMA = {
+    "type": "object",
+    "properties": {
+        "clause_number": {"type": "string"},
+        "clause_title": {"type": "string"},
+        "clause_description": {"type": "string"},
+        "tags": {"type": "array", "items": {"type": "string"}},
+    },
+    "required": ["clause_number", "clause_title", "clause_description", "tags"],
+    "additionalProperties": False,
+}
+
+_PCC_OUTPUT_SCHEMA = {
+    "type": "object",
+    "properties": {
+        "modifications": {"type": "array", "items": _PCC_ITEM_SCHEMA},
+        "additions": {"type": "array", "items": _PCC_ADDITION_SCHEMA},
+    },
+    "required": ["modifications", "additions"],
+    "additionalProperties": False,
+}
+
+
+def _base_clauses_brief(base_clauses: list[dict]) -> str:
+    """Render the project's base clauses compactly for the PCC-comparison prompt."""
+    lines = []
+    for c in base_clauses:
+        num = c.get("clause_number") or ""
+        title = c.get("clause_title") or ""
+        # Number + title is what matching hinges on; a clipped description is
+        # plenty of context and keeps the prompt small for big books.
+        desc = (c.get("clause_description") or "").strip()[:200]
+        lines.append(f"- [{num}] {title}" + (f" — {desc}" if desc else ""))
+    return "\n".join(lines) or "(no base clauses)"
+
+
+async def compare_pcc_to_book(
+    *,
+    base_clauses: list[dict],
+    pcc_text: str,
+    filename: str,
+    standard: str | None = None,
+) -> dict:
+    """Compare Particular Conditions against the project's base clauses.
+
+    `base_clauses` is the project's book-sourced clauses (each with clause_number,
+    clause_title, clause_description). Returns a dict with two lists:
+    - 'modifications': [{clause_number, clause_title, modification_note,
+      new_description}] — base clauses the PCC amends.
+    - 'additions': [{clause_number, clause_title, clause_description, tags}] —
+      brand-new clauses the PCC introduces.
+    """
+    header = []
+    if standard:
+        header.append(f"Contract standard (General Conditions): {standard}")
+    header.append(f"Particular Conditions file: {filename}")
+
+    # The base-clauses brief is identical every time this project's PCC is
+    # (re)compared, so it gets its own cached block; only the PCC text varies.
+    base_block = (
+        "\n".join(header)
+        + "\n\n--- BASE CLAUSES ALREADY IN THE PROJECT LIBRARY ---\n"
+        + _base_clauses_brief(base_clauses)
+    )
+    pcc_block = (
+        "--- PARTICULAR CONDITIONS OF CONTRACT (PCC) TEXT ---\n"
+        + (pcc_text or "(no machine-readable text could be extracted from the PCC)")
+        + "\n\nReturn the base clauses the PCC modifies, and the new clauses it adds."
+    )
+
+    async with _client().messages.stream(
+        model=EXTRACTION_MODEL,
+        # Thinking is disabled here: it counts toward max_tokens, and on a
+        # book-sized comparison adaptive thinking was observed consuming the
+        # entire budget before any JSON was emitted (stop_reason=max_tokens with
+        # no text). This is a structured matching task — constrained JSON output
+        # without thinking is both reliable and much faster. 64k output leaves
+        # room for a PCC that amends most of a 345-clause book.
+        max_tokens=64000,
+        thinking={"type": "disabled"},
+        system=[
+            {"type": "text", "text": _PCC_SYSTEM_PROMPT, "cache_control": {"type": "ephemeral"}}
+        ],
+        messages=[
+            {
+                "role": "user",
+                "content": [
+                    {"type": "text", "text": base_block, "cache_control": {"type": "ephemeral"}},
+                    {"type": "text", "text": pcc_block},
+                ],
+            }
+        ],
+        output_config={
+            "effort": "low",
+            "format": {"type": "json_schema", "schema": _PCC_OUTPUT_SCHEMA},
+        },
+    ) as stream:
+        response = await stream.get_final_message()
+
+    payload = "".join(b.text for b in response.content if b.type == "text").strip()
+    if not payload:
+        raise ValueError(
+            "The AI returned no output for the comparison "
+            f"(stop_reason={response.stop_reason}). Please run the comparison again."
+        )
+    try:
+        data = json.loads(payload)
+    except json.JSONDecodeError:
+        if response.stop_reason == "max_tokens":
+            raise ValueError(
+                "The comparison result was cut off before completion — the PCC may be "
+                "very large. Please try again or upload a shorter Particular Conditions file."
+            ) from None
+        raise ValueError(
+            "The AI returned a malformed comparison result. Please run the comparison again."
+        ) from None
+    return {
+        "modifications": data.get("modifications", []),
+        "additions": data.get("additions", []),
+    }
 
 
 # ── EOT claim document generation ───────────────────────────────────────────

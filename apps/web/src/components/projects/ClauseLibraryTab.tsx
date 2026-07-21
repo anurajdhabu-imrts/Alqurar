@@ -1,4 +1,5 @@
 import { useMemo, useRef, useState } from "react";
+import { Link } from "react-router-dom";
 import {
   AlertTriangle,
   BookText,
@@ -16,21 +17,27 @@ import { ConfirmDialog } from "@/components/ui/ConfirmDialog";
 import { AddProjectClauseModal } from "@/components/projects/AddProjectClauseModal";
 import { apiErrorMessage } from "@/api/client";
 import {
+  useClauseBookQuery,
   useClauseExtractStatus,
   useDeleteProjectClause,
   useExtractProjectClauses,
+  usePccStatus,
   useProjectClausesQuery,
+  useSelectClauseBook,
+  useUploadPcc,
 } from "@/hooks/useProjectClauses";
+import { useBooksQuery } from "@/hooks/useKnowledge";
 import { useHasPermission } from "@/hooks/usePermission";
 import type { ClauseRef } from "@/types";
 
 /**
  * Per-project Clause Library tab.
  *
- * Each project keeps its OWN clauses, built from that project's contract. The
- * analyst uploads the contract (AI extraction is on hold until the Anthropic key
- * is enabled) and/or adds clauses by hand. Later, delay events for this project
- * are matched against these clauses.
+ * The project's clauses are built from a base standard-form contract book chosen
+ * from the Knowledge Center (its clauses are copied in). The analyst may then
+ * upload the project's Particular Conditions of Contract (PCC); Claude compares
+ * them against the base clauses and flags the ones they amend as "Modified".
+ * Clauses can also be added by hand. Delay events are later matched against these.
  */
 export function ClauseLibraryTab({
   projectId,
@@ -43,31 +50,67 @@ export function ClauseLibraryTab({
 
   const { data: clauses, isLoading, isError, error } = useProjectClausesQuery(projectId);
   const deleteClause = useDeleteProjectClause(projectId);
-  const extract = useExtractProjectClauses(projectId);
+
+  const { data: books = [] } = useBooksQuery();
+  const { data: selectedBookId } = useClauseBookQuery(projectId);
+  const selectBook = useSelectClauseBook(projectId);
+
+  const uploadPcc = useUploadPcc(projectId);
+  const pccStatus = usePccStatus(projectId);
+
+  const extractContract = useExtractProjectClauses(projectId);
   const extractStatus = useClauseExtractStatus(projectId);
 
-  const fileRef = useRef<HTMLInputElement>(null);
+  const pccRef = useRef<HTMLInputElement>(null);
+  const contractRef = useRef<HTMLInputElement>(null);
   const [query, setQuery] = useState("");
+  const [filter, setFilter] = useState<"all" | "modified" | "new">("all");
   const [showAdd, setShowAdd] = useState(false);
   const [editClause, setEditClause] = useState<ClauseRef | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<ClauseRef | null>(null);
-  const [uploadErr, setUploadErr] = useState("");
+  const [pccErr, setPccErr] = useState("");
+  const [bookErr, setBookErr] = useState("");
+  const [contractErr, setContractErr] = useState("");
 
-  // Extraction lifecycle (after upload the backend reads the contract with AI).
-  const status = extractStatus.data?.status;
-  const extracting = extract.isPending || status === "running";
-  const extractError = status === "failed" ? extractStatus.data?.error || "Clause extraction failed." : "";
-  const extractDone = status === "done";
-  const extractedCount = extractStatus.data?.count ?? 0;
-  // Shown when the contract was saved but AI isn't configured (status "idle" + message).
-  const notConfigured = status === "idle" ? extractStatus.data?.error : "";
+  // Only books whose clauses finished extracting can be used as a base.
+  const readyBooks = useMemo(() => books.filter((b) => b.status === "done"), [books]);
+  const hasBook = !!selectedBookId;
+
+  // PCC comparison lifecycle.
+  const pStatus = pccStatus.data?.status;
+  const comparing = uploadPcc.isPending || pStatus === "running";
+  const pccError = pStatus === "failed" ? pccStatus.data?.error || "PCC comparison failed." : "";
+  const pccDone = pStatus === "done";
+  const modifiedCount = pccStatus.data?.modified ?? pccStatus.data?.count ?? 0;
+  const addedCount = pccStatus.data?.added ?? 0;
+  const pccNotConfigured = pStatus === "idle" ? pccStatus.data?.error : "";
+
+  // Full-contract extraction lifecycle (contract with PCC already included).
+  const eStatus = extractStatus.data?.status;
+  const extracting = extractContract.isPending || eStatus === "running";
+  const extractError =
+    eStatus === "failed" ? extractStatus.data?.error || "Clause extraction failed." : "";
+  const extractDone = eStatus === "done";
+  const extractCount = extractStatus.data?.count ?? 0;
+  const extractModified = extractStatus.data?.modified ?? 0;
+  const extractNotConfigured = eStatus === "idle" ? extractStatus.data?.error : "";
 
   const library = useMemo(() => clauses ?? [], [clauses]);
 
+  // "New" = introduced by the PCC; "Modified" = a base clause the PCC amends.
+  const newTotal = useMemo(() => library.filter((c) => c.source === "pcc").length, [library]);
+  const modifiedTotal = useMemo(
+    () => library.filter((c) => c.modified && c.source !== "pcc").length,
+    [library],
+  );
+
   const filtered = useMemo(() => {
+    let list = library;
+    if (filter === "new") list = list.filter((c) => c.source === "pcc");
+    else if (filter === "modified") list = list.filter((c) => c.modified && c.source !== "pcc");
     const q = query.trim().toLowerCase();
-    if (!q) return library;
-    return library.filter(
+    if (!q) return list;
+    return list.filter(
       (c) =>
         c.clause.toLowerCase().includes(q) ||
         c.title.toLowerCase().includes(q) ||
@@ -75,7 +118,7 @@ export function ClauseLibraryTab({
         c.book.toLowerCase().includes(q) ||
         c.tags.some((t) => t.toLowerCase().includes(q)),
     );
-  }, [query, library]);
+  }, [query, filter, library]);
 
   function confirmDelete() {
     if (!deleteTarget) return;
@@ -83,95 +126,281 @@ export function ClauseLibraryTab({
     setDeleteTarget(null);
   }
 
+  async function onSelectBook(bookId: string) {
+    setBookErr("");
+    if (!bookId) return;
+    try {
+      await selectBook.mutateAsync(bookId);
+    } catch (err) {
+      setBookErr(apiErrorMessage(err, "Could not load the selected book's clauses."));
+    }
+  }
+
+  async function onPickPcc(file: File | undefined) {
+    if (!file) return;
+    setPccErr("");
+    try {
+      await uploadPcc.mutateAsync(file);
+    } catch (err) {
+      setPccErr(apiErrorMessage(err, "Could not upload the Particular Conditions."));
+    } finally {
+      if (pccRef.current) pccRef.current.value = "";
+    }
+  }
+
   async function onPickContract(file: File | undefined) {
     if (!file) return;
-    setUploadErr("");
+    setContractErr("");
     try {
-      // The result seeds the extraction-status query, which then drives the banner.
-      await extract.mutateAsync(file);
+      await extractContract.mutateAsync(file);
     } catch (err) {
-      setUploadErr(apiErrorMessage(err, "Could not upload the contract."));
+      setContractErr(apiErrorMessage(err, "Could not upload the contract."));
     } finally {
-      if (fileRef.current) fileRef.current.value = "";
+      if (contractRef.current) contractRef.current.value = "";
     }
   }
 
   return (
     <div className="space-y-4">
-      {/* ── Contract upload / AI extraction ── */}
-      <Card className="p-5">
-        <div className="flex flex-wrap items-start justify-between gap-4">
-          <div className="max-w-xl">
-            <h3 className="text-base font-semibold text-ink inline-flex items-center gap-2">
-              <Sparkles className="size-4 text-amber-500" /> Build this project's clause library
-            </h3>
-            <p className="text-sm text-muted mt-1">
-              Upload this project's contract (e.g. the FIDIC conditions). AI will read it and extract the
-              clauses that apply to this project — saved here only. Delay events are then matched against
-              these clauses.
-            </p>
+      {/* ── Base contract book + Particular Conditions ── */}
+      <Card className="p-5 space-y-5">
+        <div className="max-w-2xl">
+          <h3 className="text-base font-semibold text-ink inline-flex items-center gap-2">
+            <Sparkles className="size-4 text-amber-500" /> Build this project's clause library
+          </h3>
+          <p className="text-sm text-muted mt-1">
+            Pick the base contract book (its General Conditions clauses are copied into this
+            project). Optionally upload the project's Particular Conditions — Claude compares them
+            against the base clauses and flags the ones they amend.
+          </p>
+        </div>
+
+        {/* Base book selector */}
+        <div className="flex flex-wrap items-end gap-3">
+          <div className="min-w-65 flex-1 max-w-md">
+            <label className="block text-xs font-medium text-muted mb-1" htmlFor="base-book">
+              Base contract book
+            </label>
+            <select
+              id="base-book"
+              className="input"
+              value={selectedBookId ?? ""}
+              disabled={!canManage || selectBook.isPending}
+              onChange={(e) => onSelectBook(e.target.value)}
+            >
+              <option value="">
+                {readyBooks.length ? "Select a contract book…" : "No books ready in the Knowledge Center"}
+              </option>
+              {readyBooks.map((b) => (
+                <option key={b.id} value={b.id}>
+                  {b.name}
+                  {b.edition ? ` (${b.edition})` : ""} · {b.clauseCount} clauses
+                </option>
+              ))}
+            </select>
+            {readyBooks.length === 0 && (
+              <p className="mt-1 text-xs text-muted">
+                Upload a standard form in the{" "}
+                <Link to="/knowledge" className="text-navy-700 hover:underline">
+                  Knowledge Center
+                </Link>{" "}
+                first.
+              </p>
+            )}
           </div>
+
           {canManage && (
-            <div className="flex items-center gap-2 shrink-0">
-              <button
-                className="btn btn-outline"
-                onClick={() => fileRef.current?.click()}
-                disabled={extracting}
-              >
-                {extracting ? <Loader2 className="size-4 animate-spin" /> : <FileUp className="size-4" />}
-                {extract.isPending ? "Uploading…" : extracting ? "Extracting…" : "Upload contract"}
-              </button>
+            <div className="flex items-center gap-2">
+              {selectBook.isPending && (
+                <span className="text-sm text-navy-700 inline-flex items-center gap-1.5">
+                  <Loader2 className="size-4 animate-spin" /> Copying clauses…
+                </span>
+              )}
               <button className="btn btn-primary" onClick={() => setShowAdd(true)}>
                 <Plus className="size-4" /> Add clause
               </button>
             </div>
           )}
+        </div>
+
+        {/* Particular Conditions upload */}
+        <div className="flex flex-wrap items-end gap-3 pt-1 border-t border-border">
+          <div className="flex-1 min-w-65 pt-3">
+            <p className="text-sm font-medium text-ink">Particular Conditions of Contract (optional)</p>
+            <p className="text-xs text-muted mt-0.5">
+              Upload the project's PCC to mark which base clauses are modified.
+            </p>
+          </div>
+          {canManage && (
+            <div className="pt-3">
+              <button
+                className="btn btn-outline"
+                onClick={() => pccRef.current?.click()}
+                disabled={!hasBook || comparing}
+                title={hasBook ? undefined : "Select a base contract book first"}
+              >
+                {comparing ? <Loader2 className="size-4 animate-spin" /> : <FileUp className="size-4" />}
+                {uploadPcc.isPending ? "Uploading…" : comparing ? "Comparing…" : "Upload Particular Conditions"}
+              </button>
+            </div>
+          )}
           <input
-            ref={fileRef}
+            ref={pccRef}
             type="file"
-            accept=".pdf,.doc,.docx"
+            accept=".pdf,.doc,.docx,.txt,.rtf,.png,.jpg,.jpeg,.tif,.tiff,.webp"
+            className="hidden"
+            onChange={(e) => onPickPcc(e.target.files?.[0])}
+          />
+        </div>
+
+        {/* ── Full contract with the PCC already included ── */}
+        <div className="flex flex-wrap items-end gap-3 pt-1 border-t border-border">
+          <div className="flex-1 min-w-65 pt-3">
+            <p className="text-sm font-medium text-ink">
+              Or upload the full contract (Particular Conditions included)
+            </p>
+            <p className="text-xs text-muted mt-0.5">
+              No base book needed — Claude reads the whole contract, extracts the claim-relevant
+              clauses, and flags the ones its Particular Conditions amend.
+            </p>
+          </div>
+          {canManage && (
+            <div className="pt-3">
+              <button
+                className="btn btn-outline"
+                onClick={() => contractRef.current?.click()}
+                disabled={extracting}
+              >
+                {extracting ? <Loader2 className="size-4 animate-spin" /> : <FileUp className="size-4" />}
+                {extractContract.isPending
+                  ? "Uploading…"
+                  : extracting
+                    ? "Extracting…"
+                    : "Upload Full Contract"}
+              </button>
+            </div>
+          )}
+          <input
+            ref={contractRef}
+            type="file"
+            accept=".pdf,.doc,.docx,.txt,.rtf,.png,.jpg,.jpeg,.tif,.tiff,.webp"
             className="hidden"
             onChange={(e) => onPickContract(e.target.files?.[0])}
           />
         </div>
 
+        {/* ── Banners ── */}
+        {comparing && (
+          <p className="text-sm text-navy-700 bg-navy-50 rounded-md px-3 py-2 inline-flex items-center gap-2">
+            <Loader2 className="size-4 animate-spin" /> Claude is comparing the Particular Conditions
+            against the base clauses. This can take a minute.
+          </p>
+        )}
+        {pccDone && (
+          <p className="text-sm text-success bg-success-bg rounded-md px-3 py-2 inline-flex items-center gap-2">
+            <CheckCircle2 className="size-4" /> Comparison complete — {modifiedCount} clause
+            {modifiedCount === 1 ? "" : "s"} modified
+            {addedCount > 0 ? `, ${addedCount} new clause${addedCount === 1 ? "" : "s"} added` : ""} by the
+            Particular Conditions.
+          </p>
+        )}
         {extracting && (
-          <p className="mt-3 text-sm text-navy-700 bg-navy-50 rounded-md px-3 py-2 inline-flex items-center gap-2">
-            <Loader2 className="size-4 animate-spin" /> Claude is reading the contract and extracting its
-            clauses. This can take a minute or two.
+          <p className="text-sm text-navy-700 bg-navy-50 rounded-md px-3 py-2 inline-flex items-center gap-2">
+            <Loader2 className="size-4 animate-spin" /> Claude is reading the contract and
+            extracting its clauses. This can take a few minutes for a large or scanned contract.
           </p>
         )}
         {extractDone && (
-          <p className="mt-3 text-sm text-success bg-success-bg rounded-md px-3 py-2 inline-flex items-center gap-2">
-            <CheckCircle2 className="size-4" /> Extracted {extractedCount} clause{extractedCount === 1 ? "" : "s"} from the contract.
-          </p>
-        )}
-        {notConfigured && (
-          <p className="mt-3 inline-flex items-center gap-1.5 text-xs text-amber-700 bg-amber-50 rounded-md px-2.5 py-1">
-            <AlertTriangle className="size-3.5" /> {notConfigured}
+          <p className="text-sm text-success bg-success-bg rounded-md px-3 py-2 inline-flex items-center gap-2">
+            <CheckCircle2 className="size-4" /> Extraction complete — {extractCount} clause
+            {extractCount === 1 ? "" : "s"} added
+            {extractModified > 0
+              ? `, ${extractModified} flagged as amended by the Particular Conditions`
+              : ""}
+            .
           </p>
         )}
         {extractError && (
-          <p className="mt-3 text-sm text-error bg-error-bg rounded-md px-3 py-2 inline-flex items-center gap-2">
+          <p className="text-sm text-error bg-error-bg rounded-md px-3 py-2 inline-flex items-center gap-2">
             <AlertTriangle className="size-4" /> {extractError}
           </p>
         )}
-        {uploadErr && (
-          <p className="mt-3 text-sm text-error bg-error-bg rounded-md px-3 py-2 inline-flex items-center gap-2">
-            <AlertTriangle className="size-4" /> {uploadErr}
+        {(pccNotConfigured || extractNotConfigured) && (
+          <p className="inline-flex items-center gap-1.5 text-xs text-amber-700 bg-amber-50 rounded-md px-2.5 py-1">
+            <AlertTriangle className="size-3.5" /> {pccNotConfigured || extractNotConfigured}
+          </p>
+        )}
+        {pccError && (
+          <p className="text-sm text-error bg-error-bg rounded-md px-3 py-2 inline-flex items-center gap-2">
+            <AlertTriangle className="size-4" /> {pccError}
+          </p>
+        )}
+        {bookErr && (
+          <p className="text-sm text-error bg-error-bg rounded-md px-3 py-2 inline-flex items-center gap-2">
+            <AlertTriangle className="size-4" /> {bookErr}
+          </p>
+        )}
+        {pccErr && (
+          <p className="text-sm text-error bg-error-bg rounded-md px-3 py-2 inline-flex items-center gap-2">
+            <AlertTriangle className="size-4" /> {pccErr}
+          </p>
+        )}
+        {contractErr && (
+          <p className="text-sm text-error bg-error-bg rounded-md px-3 py-2 inline-flex items-center gap-2">
+            <AlertTriangle className="size-4" /> {contractErr}
           </p>
         )}
       </Card>
 
-      {/* ── Search ── */}
-      <div className="relative max-w-md">
-        <Search className="absolute left-3 top-1/2 -translate-y-1/2 size-4 text-faint" />
-        <input
-          className="input pl-9"
-          placeholder="Search this project's clauses…"
-          value={query}
-          onChange={(e) => setQuery(e.target.value)}
-        />
+      {/* ── Search + filter tabs ── */}
+      <div className="flex flex-wrap items-center gap-3">
+        <div className="relative max-w-md flex-1 min-w-60">
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 size-4 text-faint" />
+          <input
+            className="input pl-9"
+            placeholder="Search this project's clauses…"
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+          />
+        </div>
+        <div className="flex items-center gap-1.5" role="tablist" aria-label="Filter clauses">
+          <button
+            role="tab"
+            aria-selected={filter === "all"}
+            className={`badge cursor-pointer transition-colors ${
+              filter === "all"
+                ? "bg-navy-700 text-white"
+                : "bg-navy-50 text-navy-700 hover:bg-navy-100"
+            }`}
+            onClick={() => setFilter("all")}
+          >
+            All · {library.length}
+          </button>
+          <button
+            role="tab"
+            aria-selected={filter === "modified"}
+            className={`badge cursor-pointer transition-colors ${
+              filter === "modified"
+                ? "bg-amber-500 text-white"
+                : "bg-amber-100 text-amber-800 hover:bg-amber-200"
+            }`}
+            onClick={() => setFilter("modified")}
+          >
+            <AlertTriangle className="size-3" /> Modified · {modifiedTotal}
+          </button>
+          <button
+            role="tab"
+            aria-selected={filter === "new"}
+            className={`badge cursor-pointer transition-colors ${
+              filter === "new"
+                ? "bg-emerald-600 text-white"
+                : "bg-emerald-100 text-emerald-800 hover:bg-emerald-200"
+            }`}
+            onClick={() => setFilter("new")}
+          >
+            <Plus className="size-3" /> New · {newTotal}
+          </button>
+        </div>
       </div>
 
       {/* ── Clause list ── */}
@@ -190,13 +419,21 @@ export function ClauseLibraryTab({
           </span>
           <h3 className="mt-3 font-semibold text-ink">No clauses yet</h3>
           <p className="mt-1 text-sm text-muted max-w-md mx-auto">
-            Upload this project's contract or add a clause by hand to start building its library.
+            Select a base contract book above (or add a clause by hand) to start building this
+            project's library.
           </p>
         </Card>
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-          {filtered.map((c) => (
-            <Card key={c.id} className="card-hover p-5 relative group">
+          {filtered.map((c) => {
+            const isNew = c.source === "pcc";
+            return (
+            <Card
+              key={c.id}
+              className={`card-hover p-5 relative group ${
+                isNew ? "ring-1 ring-emerald-300" : c.modified ? "ring-1 ring-amber-300" : ""
+              }`}
+            >
               {canManage && (
                 <div className="absolute top-3 right-3 flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity bg-card/90 rounded-lg">
                   <button
@@ -218,20 +455,55 @@ export function ClauseLibraryTab({
                 </div>
               )}
               <div className="flex items-center justify-between gap-2">
-                <span className="badge bg-navy-50 text-navy-700"><BookText className="size-3" /> {c.book}</span>
-                <span className="text-xs font-bold text-faint tabular-nums">Clause {c.clause}</span>
+                <div className="flex items-center gap-2 min-w-0">
+                  <span className="badge bg-navy-50 text-navy-700 min-w-0 max-w-full" title={c.book}>
+                    <BookText className="size-3 shrink-0" />
+                    <span className="truncate">{c.book}</span>
+                  </span>
+                  {isNew ? (
+                    <span className="badge bg-emerald-100 text-emerald-800 shrink-0" title="Added by the Particular Conditions">
+                      <Plus className="size-3" /> New clause
+                    </span>
+                  ) : (
+                    c.modified && (
+                      <span className="badge bg-amber-100 text-amber-800 shrink-0" title={c.modificationNote}>
+                        <AlertTriangle className="size-3" /> Modified
+                      </span>
+                    )
+                  )}
+                </div>
+                <span className="text-xs font-bold text-faint tabular-nums shrink-0">Clause {c.clause}</span>
               </div>
               <h3 className="mt-2.5 font-semibold text-ink">{c.title}</h3>
               <p className="mt-1 text-sm text-muted">{c.summary}</p>
+              {!isNew && c.modified && c.modificationNote && (
+                <p className="mt-2 text-xs text-amber-800 bg-amber-50 rounded-md px-2.5 py-1.5">
+                  <span className="font-semibold">PCC amendment:</span> {c.modificationNote}
+                </p>
+              )}
+              {isNew && (
+                <p className="mt-2 text-xs text-emerald-800 bg-emerald-50 rounded-md px-2.5 py-1.5">
+                  Introduced by the project's Particular Conditions — not in the base contract book.
+                </p>
+              )}
               <div className="mt-3 flex flex-wrap gap-1.5">
                 {c.tags.map((t) => (
                   <span key={t} className="text-[11px] font-medium text-muted bg-navy-50 rounded px-2 py-0.5">#{t}</span>
                 ))}
               </div>
             </Card>
-          ))}
+            );
+          })}
           {filtered.length === 0 && (
-            <p className="col-span-full text-center text-muted py-12">No clauses match your search.</p>
+            <p className="col-span-full text-center text-muted py-12">
+              {query.trim()
+                ? "No clauses match your search."
+                : filter === "new"
+                  ? "No new clauses were added by the Particular Conditions."
+                  : filter === "modified"
+                    ? "No clauses were modified by the Particular Conditions."
+                    : "No clauses match your search."}
+            </p>
           )}
         </div>
       )}

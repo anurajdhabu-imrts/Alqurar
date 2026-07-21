@@ -1,7 +1,7 @@
 import { Sparkles } from "lucide-react";
 import type { ClientProposal } from "@/api/clientProposals";
 import { formatCurrencyFull, formatDate } from "@/lib/utils";
-import { rowNumbers } from "@/lib/proposalCosting";
+import { displayDescription, rowNumbers } from "@/lib/proposalCosting";
 
 type Content = NonNullable<ClientProposal["content"]>;
 
@@ -80,11 +80,14 @@ export function ProposalDocumentView({
               <tbody>
                 {content.costing.map((c, i) => (
                   <tr key={i} className={`border-b border-border/60 align-top ${c.group ? "bg-navy-50/40" : ""}`}>
-                    <td className="py-2.5 pr-3 text-right tabular-nums text-faint whitespace-nowrap">{numbers[i]}</td>
+                    {/* Sub-line numbers (2.1, 2.2…) sit inline before the item name, not in
+                        the Sl.No column, which carries only the top-level number. */}
+                    <td className="py-2.5 pr-3 text-right tabular-nums text-faint whitespace-nowrap">{c.sub ? "" : numbers[i]}</td>
                     <td className={`py-2.5 px-3 text-ink ${c.group ? "font-semibold" : "font-medium"} ${c.sub ? "pl-6" : ""}`}>
+                      {c.sub && <span className="font-bold mr-1.5">{numbers[i]}</span>}
                       {c.item}
                     </td>
-                    <td className="py-2.5 px-3 text-muted">{c.description}</td>
+                    <td className="py-2.5 px-3 text-muted">{displayDescription(c.description)}</td>
                     {/* A group header is priced by the sub-lines beneath it, so it shows no
                         amount of its own — repeating the subtotal here reads as double-counting. */}
                     {showTimeline && <td className="py-2.5 px-3 text-muted whitespace-nowrap">{c.group ? "" : c.timeline || "—"}</td>}

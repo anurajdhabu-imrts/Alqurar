@@ -27,6 +27,20 @@ export function rowNumbers(rows: Row[]): string[] {
   });
 }
 
+/** Format an hours figure — whole numbers plain, otherwise one decimal. */
+export function formatHours(h: number): string {
+  const n = Number.isFinite(h) ? h : 0;
+  return Number.isInteger(n) ? String(n) : n.toFixed(1);
+}
+
+/** Description column text. Older generations stored the markup percentage ("15%")
+ *  as the description of Contingency/Overheads/etc. rows — those are no longer
+ *  shown, so a percent-only description renders as empty. */
+export function displayDescription(desc?: string): string {
+  const d = (desc ?? "").trim();
+  return /^\d+(\.\d+)?\s*%$/.test(d) ? "" : d;
+}
+
 /** Sum of a group header's children — the rows nested directly beneath it. */
 export function groupSubtotal<T extends Row>(rows: T[], groupIndex: number, amount: (row: T) => number): number {
   let sum = 0;

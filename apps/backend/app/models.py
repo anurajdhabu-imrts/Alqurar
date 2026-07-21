@@ -99,12 +99,15 @@ class Project(Base):
     # ("proposal"). Proposals reuse the same documents / delay-event pipeline but
     # live in their own Proposals area, not the Projects list.
     kind: Mapped[str] = mapped_column(String, default="project")
+    # The Knowledge-Center contract book chosen as this project's base clause set
+    # (its clauses are copied into the project's Clause Library). Null until picked.
+    clauseBookId: Mapped[Optional[str]] = mapped_column(String, nullable=True)
 
     _FIELDS = (
         "id", "name", "code", "employer", "contractor", "standard", "value", "currency",
         "startDate", "completionDate", "status", "riskLevel", "source", "location", "engineer",
         "loaRef", "commencementDate", "timeForCompletionDays", "dataDate", "baselineProgramme", "createdAt",
-        "kind",
+        "kind", "clauseBookId",
     )
 
     def to_dict(self) -> dict:
@@ -268,10 +271,19 @@ class ProjectClause(Base):
     created_by: Mapped[Optional[str]] = mapped_column(String, nullable=True)
     created_at: Mapped[Optional[str]] = mapped_column(String, nullable=True)
     updated_at: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+    # How the row got here: "manual" (added by hand), "book" (copied from a
+    # selected Knowledge-Center contract book) or "ai" (extracted from an uploaded
+    # contract). Book-sourced rows are the ones a PCC upload can amend.
+    source: Mapped[str] = mapped_column(String, default="manual")
+    # Set when a Particular Conditions (PCC) upload amends this base clause. The
+    # card then shows a "Modified" tag; `modification_note` says what changed.
+    modified: Mapped[bool] = mapped_column(Boolean, default=False)
+    modification_note: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
 
     _FIELDS = (
         "id", "projectId", "contract_standard", "clause_number", "clause_title",
         "clause_description", "tags", "created_by", "created_at", "updated_at",
+        "source", "modified", "modification_note",
     )
 
     def to_dict(self) -> dict:

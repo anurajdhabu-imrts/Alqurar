@@ -109,23 +109,57 @@ def _merge(chunk_results: List[List[Dict]]) -> List[Dict]:
     return ordered
 
 
+# How many times to retry a chunk that hits a transient API error (rate limit,
+# overloaded, timeout, connection blip) before giving up on it. Extraction of a
+# whole book fans many chunks out at once, so throttling is expected — we back off
+# and retry rather than let one 429 sink the entire book. Tune via BOOK_CHUNK_RETRIES.
+_CHUNK_RETRIES = int(os.getenv("BOOK_CHUNK_RETRIES", "6"))
+
+# Transient failures worth retrying. A bad API key (AuthenticationError) is NOT here
+# — that never recovers, so it stays fatal and stops the whole run immediately.
+_RETRYABLE = (
+    anthropic.RateLimitError,
+    anthropic.InternalServerError,   # 5xx, incl. 529 "overloaded"
+    anthropic.APITimeoutError,
+    anthropic.APIConnectionError,
+)
+
+
 async def _run_chunk(book: Dict, chunk: str, part: int, total: int) -> List[Dict]:
-    """Extract one chunk. A single failed chunk must not sink the whole book, so
-    it is logged and yields no clauses."""
+    """Extract one chunk, retrying transient API errors with exponential backoff so
+    the book isn't left with holes. A chunk that still fails after every retry is
+    logged and yields no clauses rather than sinking the whole book."""
+    clauses: List[Dict] = []
     async with _sem:
-        try:
-            clauses = await extract_book_clauses(
-                text=chunk,
-                book_name=book["name"],
-                edition=book.get("edition"),
-                part=part,
-                of=total,
-            )
-        except (anthropic.AuthenticationError, anthropic.APIStatusError):
-            raise
-        except Exception:  # noqa: BLE001 — one bad chunk shouldn't lose the book
-            logger.exception("Book %s: chunk %d/%d failed", book["id"], part, total)
-            clauses = []
+        delay = 4.0
+        for attempt in range(1, _CHUNK_RETRIES + 1):
+            try:
+                clauses = await extract_book_clauses(
+                    text=chunk,
+                    book_name=book["name"],
+                    edition=book.get("edition"),
+                    part=part,
+                    of=total,
+                )
+                break
+            except anthropic.AuthenticationError:
+                raise  # no key / bad key — nothing will ever succeed
+            except _RETRYABLE as e:
+                if attempt >= _CHUNK_RETRIES:
+                    logger.warning(
+                        "Book %s: chunk %d/%d gave up after %d attempts (%s)",
+                        book["id"], part, total, attempt, type(e).__name__,
+                    )
+                    break
+                logger.info(
+                    "Book %s: chunk %d/%d hit %s — retry %d/%d in %.0fs",
+                    book["id"], part, total, type(e).__name__, attempt, _CHUNK_RETRIES, delay,
+                )
+                await asyncio.sleep(delay)
+                delay = min(delay * 2, 90.0)
+            except Exception:  # noqa: BLE001 — one bad chunk shouldn't lose the book
+                logger.exception("Book %s: chunk %d/%d failed", book["id"], part, total)
+                break
 
     await asyncio.to_thread(books.bump_progress, book["id"])
     return clauses

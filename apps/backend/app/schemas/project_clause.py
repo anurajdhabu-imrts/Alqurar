@@ -33,6 +33,11 @@ class ProjectClauseOut(BaseModel):
     clause_title: str
     clause_description: str
     tags: List[str] = []
+    # "manual" | "book" | "ai" — where the clause came from.
+    source: str = "manual"
+    # Set when the project's Particular Conditions amend this base clause.
+    modified: bool = False
+    modification_note: Optional[str] = None
     created_by: Optional[str] = None
     created_at: Optional[str] = None
     updated_at: Optional[str] = None

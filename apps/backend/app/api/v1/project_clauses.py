@@ -18,19 +18,22 @@ from datetime import datetime, timezone
 from typing import List
 
 from fastapi import APIRouter, BackgroundTasks, Depends, File, Form, HTTPException, UploadFile, status
+from pydantic import BaseModel
 
 from app.schemas.project_clause import (
     ProjectClauseCreate,
     ProjectClauseOut,
     ProjectClauseUpdate,
 )
-from app.services import clause_extraction
+from app.services import clause_extraction, contract_book_service, pcc_comparison
 from app.services.document_service import create_document, next_document_id
 from app.services.project_clause_service import (
     add_clause,
     delete_clause,
     get_clause,
+    get_clause_book_id,
     list_by_project,
+    set_book_clauses,
     update_clause,
 )
 from app.api.v1.deps import get_current_user, require_permission
@@ -154,3 +157,106 @@ async def upload_contract_for_clauses(
 async def clause_extraction_status(project_id: str, _=Depends(get_current_user)):
     """Current state of background clause extraction for a project."""
     return clause_extraction.get_status(project_id)
+
+
+# ── Base contract book (from the Knowledge Center) ───────────────────────────
+
+class SelectBookPayload(BaseModel):
+    bookId: str
+
+
+@router.get("/{project_id}/clauses/book")
+async def get_project_clause_book(project_id: str, _=Depends(get_current_user)):
+    """The Knowledge-Center book chosen as this project's base clause set."""
+    return {"bookId": get_clause_book_id(project_id)}
+
+
+@router.post("/{project_id}/clauses/book")
+async def select_project_clause_book(
+    project_id: str,
+    payload: SelectBookPayload,
+    _=Depends(get_current_user),
+    __=Depends(_MANAGE),
+):
+    """Pick a base FIDIC/standard-form book and copy its clauses into this
+    project's library. Replaces the previously book-sourced clauses (manual and
+    AI-extracted ones are kept) and clears any prior PCC modifications."""
+    book = contract_book_service.get_book(payload.bookId)
+    if not book:
+        raise HTTPException(status_code=404, detail="Contract book not found.")
+    if book.get("status") != "done":
+        raise HTTPException(
+            status_code=400,
+            detail="This book hasn't finished extracting its clauses yet.",
+        )
+    book_clauses = contract_book_service.list_book_clauses(payload.bookId)
+    if not book_clauses:
+        raise HTTPException(status_code=400, detail="This book has no extracted clauses to copy.")
+    count = set_book_clauses(project_id, book, book_clauses)
+    # A new base book invalidates any earlier PCC comparison.
+    pcc_comparison.mark_idle(project_id)
+    return {"bookId": payload.bookId, "count": count}
+
+
+# ── Particular Conditions of Contract (PCC) ─────────────────────────────────
+
+@router.post("/{project_id}/clauses/pcc", status_code=status.HTTP_201_CREATED)
+async def upload_pcc(
+    project_id: str,
+    background: BackgroundTasks,
+    file: UploadFile = File(...),
+    current_user=Depends(get_current_user),
+    __=Depends(_MANAGE),
+):
+    """Upload the project's Particular Conditions of Contract. Claude compares it
+    against the selected base book's clauses and flags the ones it amends.
+
+    The PCC is stored in the project's data room, then compared in the background;
+    the client polls `pcc-status`. Requires a base book to have been selected."""
+    if not get_clause_book_id(project_id):
+        raise HTTPException(
+            status_code=400,
+            detail="Select a base contract book before uploading the Particular Conditions.",
+        )
+
+    content = await file.read()
+    doc_id = next_document_id()
+    record = {
+        "id": doc_id,
+        "projectId": project_id,
+        "name": file.filename or "particular-conditions",
+        "type": _doc_type(file.filename or ""),
+        "sizeKB": max(1, round(len(content) / 1024)),
+        "uploadedAt": datetime.now(timezone.utc).isoformat(),
+        "uploadedBy": current_user.get("name") or current_user.get("email") or "",
+        "status": "Uploaded",
+        "claimRef": "Particular Conditions",
+        "note": "Uploaded for PCC comparison",
+        "driveFileId": doc_id,
+        "data": content,
+        "mime": file.content_type or "application/octet-stream",
+    }
+    create_document(record)
+
+    if not os.getenv("ANTHROPIC_API_KEY"):
+        return {
+            "stored": True,
+            "documentId": doc_id,
+            "status": "idle",
+            "message": "Particular Conditions saved. AI comparison will run once the Anthropic key is enabled.",
+        }
+
+    pcc_comparison.mark_running(project_id)
+    background.add_task(pcc_comparison.run_comparison, project_id, doc_id)
+    return {
+        "stored": True,
+        "documentId": doc_id,
+        "status": "running",
+        "message": "Particular Conditions saved. Claude is comparing them against the base clauses…",
+    }
+
+
+@router.get("/{project_id}/clauses/pcc-status")
+async def pcc_comparison_status(project_id: str, _=Depends(get_current_user)):
+    """Current state of background PCC comparison for a project."""
+    return pcc_comparison.get_status(project_id)
