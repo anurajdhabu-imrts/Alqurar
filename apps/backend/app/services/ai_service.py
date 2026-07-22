@@ -1465,3 +1465,234 @@ async def generate_client_proposal(
 
     payload = next((b.text for b in response.content if b.type == "text"), "")
     return json.loads(payload)
+
+
+# ── Admissibility scoring matrix ────────────────────────────────────────────
+# Builds the weighted admissibility rubric for a project's EOT claim: the
+# applicable contract clauses (typically the claims/notice clause, the EOT
+# entitlement clause and the variations clause), each allocated marks out of 100,
+# with a weighted checklist of compliance criteria. Grounded in the project's
+# delay events and its Clause Library. The output is editable in the
+# Admissibility tab (see services/admissibility_service.py).
+
+_ADMISSIBILITY_SYSTEM_PROMPT = (
+    "You are a forensic construction-claims analyst building an ADMISSIBILITY "
+    "SCORING MATRIX for a project's Extension of Time (EOT) / delay claim under "
+    "standards such as FIDIC, NEC4 and CPWD. You are given the project's delay events "
+    "and its CLAUSE LIBRARY — the clauses that actually govern THIS contract, including "
+    "any amended by the Particular Conditions. Build the matrix FRESH for this project, "
+    "from its own clauses and events. Every project is different: derive the clauses, "
+    "criteria and weights yourself; do not assume a fixed set.\n\n"
+    "How the matrix works:\n"
+    "- Select, FROM THE CLAUSE LIBRARY provided, the clauses that govern whether these "
+    "delay events are ADMISSIBLE — typically the CLAIMS / NOTICE procedure clause, the "
+    "EOT ENTITLEMENT clause and, where variations are involved, the VARIATIONS clause. "
+    "Use as many as genuinely apply: it may be 1, 2 or 3 groups (occasionally more).\n"
+    "- Each clause group gets a whole-number 'marks' allocation, and the marks across "
+    "ALL groups MUST sum to 100. Weight by importance to admissibility for THESE events "
+    "(the notice/claims clause is usually weighted most heavily).\n"
+    "- Within each clause group, DERIVE the compliance CRITERIA from what THAT clause "
+    "actually requires — each criterion is one requirement the claim must satisfy (a "
+    "notice, a deadline, a content requirement, a record to keep). Give each a 'category' "
+    "(the procedural stage, e.g. 'Delay Notice', 'Detailed EOT Claim', 'Time Bar'), the "
+    "exact 'subClause' it comes from as numbered in this contract, a short 'description', "
+    "and an 'overallWtg' percentage. The overallWtg values in a group MUST sum to 100; "
+    "weight the pivotal requirements (the initial notice, the detailed claim, the time "
+    "bar) far more heavily than minor content checks.\n"
+    "- USE EACH CLAUSE AS IT APPLIES TO THIS PROJECT. When the Clause Library marks a "
+    "clause [Modified by Particular Conditions], build its criteria from the AMENDED "
+    "provisions (e.g. a changed notice period, an added requirement), set that group's "
+    "'source' to 'modified', and state the change in 'note'. When the clause is NOT "
+    "modified, use its original provisions and set 'source' to 'book'. A clause the "
+    "Particular Conditions ADD is 'new'; a clause you add because the events clearly rely "
+    "on it but it is missing from the library is 'manual'. Give 'note' one line where a "
+    "modification or a new/manual clause needs explaining (empty string otherwise).\n\n"
+    "Rules:\n"
+    "- Cite ONLY clauses grounded in this project's Clause Library — take the clause "
+    "numbers, titles and provisions from there, using the amended wording where the "
+    "library flags a modification. Do NOT copy clauses, sub-clause references, criteria "
+    "or weights from any other project or example.\n"
+    "- Base the clause selection and weighting on the delay events (their causes and "
+    "cited clauses). If the events are variation-driven, weight the variations clause "
+    "higher; if they are pure Employer delays, the entitlement and notice clauses matter "
+    "most.\n"
+    "- A FORMAT EXAMPLE from a different project is provided in a separate block. Use it "
+    "ONLY to match the STRUCTURE, granularity and weighting style — never its clauses, "
+    "criteria or numbers.\n"
+    "- 'summary' is one or two sentences explaining the clause selection and weighting."
+)
+
+# A FORMAT-ONLY example (from a different project) showing the structure, granularity
+# and weighting style expected — NOT a template to reproduce. Kept as a separate cached
+# system block. Rows: category | subClause | criteria | overallWtg.
+_ADMISSIBILITY_REFERENCE = (
+    "FORMAT EXAMPLE — ILLUSTRATIVE ONLY, from a DIFFERENT project. It shows the level of "
+    "detail and the weighting pattern to aim for: clause groups → categories → sub-clause "
+    "criteria, an overallWtg that sums to 100 per group, marks that sum to 100 across "
+    "groups, and a few pivotal criteria weighted heavily with many minor checks weighted "
+    "lightly. Do NOT copy its clauses, sub-clause numbers, criteria wording, marks or "
+    "weights — build the real matrix from THIS project's Clause Library and delay events. "
+    "This example just calibrates the format.\n\n"
+    "=== Example: a Clause 20 group — marks 60 ===\n"
+    "Delay Notice | 20.1A(1) | Notice within 14 days | 20\n"
+    "Delay Notice | 20.1A(1) | Delay event described | 0.85\n"
+    "Delay Notice | 20.1A(1) | Criticality explained | 0.85\n"
+    "Delay Notice | 20.1A(1) | Programme impact identified | 0.85\n"
+    "Delay Notice | 20.1A(1) | Recovery measures identified | 0.85\n"
+    "Delay Notice | 20.1A(1) | Entitlement clause cited | 0.85\n"
+    "Detailed EOT Claim | 20.1A(2) | Detailed claim submitted within 28 days | 20\n"
+    "Detailed EOT Claim | 20.1A(2) | Relief & reasons identified | 0.85\n"
+    "Detailed EOT Claim | 20.1A(2) | Delaying events described | 0.85\n"
+    "Detailed EOT Claim | 20.1A(2) | Contractual entitlement identified | 0.85\n"
+    "Detailed EOT Claim | 20.1A(2) | Contemporaneous records provided | 0.85\n"
+    "Detailed EOT Claim | 20.1A(2) | Mitigation measures described | 0.85\n"
+    "Interim EOT Claim | 20.1A(2) | Reason full claim unavailable | 0.85\n"
+    "Interim EOT Claim | 20.1A(2) | Available details provided | 0.85\n"
+    "Interim EOT Claim | 20.1A(2) | Updated every 28 days | 1.00\n"
+    "Interim EOT Claim | 20.1A(2) | Final detailed claim submitted | 1.00\n"
+    "Additional Payment | 20.1B(1) | Notice within 14 days for any additional payment or cost | 20\n"
+    "Additional Payment | 20.1B(1) | Detailed monetary claim within 28 days | 1.00\n"
+    "Additional Payment | 20.1B(2) | Interim claim submitted | 0.85\n"
+    "Additional Payment | 20.1B(2) | Interim updates submitted | 0.85\n"
+    "Additional Payment | 20.1B(2) | Final claim submitted | 0.85\n"
+    "Additional Payment | 20.1B(2) | Quantum and evidence included | 0.85\n"
+    "Time Bar | 20.1C(1) | Delay notice within 14 days | 0.85\n"
+    "Claim Assessment | 20.1C(3) | Complete claim submitted pursuant to Clause 20.1 A or 20.1 B | 20\n"
+    "Claim Assessment | 20.1C(3) | Additional info requested by Engineer & provided | 0.85\n"
+    "Entitlement Determination | 20.1C(4) | Compliant EOT claim submitted pursuant to Clause 20.1 A - before determination | 0.85\n"
+    "Entitlement Determination | 20.1C(4) | Compliant final cost claim submitted pursuant to Clause 20.1.B - before determination | 0.85\n"
+    "(Example Clause 20 criteria weights sum to 100.)\n\n"
+    "=== Example: a Clause 8.4 group — marks 30 ===\n"
+    "EOT Entitlement | 8.4 | Is the Event Qualifying as defined in Clause 8.4 (Variation, any cause under these conditions, Employers delay) | 40\n"
+    "EOT Entitlement | 8.4 | Criticality explained | 10\n"
+    "EOT Entitlement | 8.4 | Impact on completion date demonstrated | 10\n"
+    "EOT Entitlement | 8.4 | Claim submitted under Clause 20.1 | 40\n"
+    "(Example Clause 8.4 criteria weights sum to 100.)\n\n"
+    "=== Example: a Clause 13 group — marks 10 ===\n"
+    "Variation Quotation | 13.3A | Quotation submitted within 14 days, after request from the Engineer | 40\n"
+    "Variation Quotation | 13.3A | Delay implications included | 20\n"
+    "Variation Without Quotation | 13.3B | If the Engineer does not request for Quotation, the Contractor within 14 days shall submit the cost of Delay/disruption it anticipates due to the variation | 40\n"
+    "(Example Clause 13 criteria weights sum to 100.)"
+)
+
+_ADMISS_CRITERION_SCHEMA = {
+    "type": "object",
+    "properties": {
+        "category": {"type": "string"},
+        "subClause": {"type": "string"},
+        "description": {"type": "string"},
+        "overallWtg": {"type": "number"},
+    },
+    "required": ["category", "subClause", "description", "overallWtg"],
+    "additionalProperties": False,
+}
+
+_ADMISS_CLAUSE_SCHEMA = {
+    "type": "object",
+    "properties": {
+        "clauseRef": {"type": "string"},
+        "label": {"type": "string"},
+        "marks": {"type": "number"},
+        "source": {"type": "string", "enum": ["book", "modified", "new", "manual"]},
+        "note": {"type": "string"},
+        "criteria": {"type": "array", "items": _ADMISS_CRITERION_SCHEMA},
+    },
+    "required": ["clauseRef", "label", "marks", "source", "note", "criteria"],
+    "additionalProperties": False,
+}
+
+_ADMISSIBILITY_OUTPUT_SCHEMA = {
+    "type": "object",
+    "properties": {
+        "clauses": {"type": "array", "items": _ADMISS_CLAUSE_SCHEMA},
+        "summary": {"type": "string"},
+    },
+    "required": ["clauses", "summary"],
+    "additionalProperties": False,
+}
+
+
+def _clauses_for_admissibility(clauses: list[dict]) -> str:
+    """Render the project's Clause Library for the admissibility prompt, surfacing
+    each clause's origin and any Particular-Conditions modification so the model can
+    set the group 'source' correctly."""
+    if not clauses:
+        return "(no clause library uploaded — infer the standard clauses from the events)"
+    origin_of = {"book": "base standard form", "ai": "extracted from contract", "manual": "added manually"}
+    lines = []
+    for c in clauses:
+        num = (c.get("clause_number") or "").strip()
+        title = (c.get("clause_title") or "").strip()
+        if not num and not title:
+            continue
+        desc = " ".join((c.get("clause_description") or "").split())
+        if len(desc) > 200:
+            desc = desc[:200].rstrip() + "…"
+        origin = origin_of.get(c.get("source") or "manual", "added manually")
+        line = f"- [{num}] {title} (origin: {origin}"
+        if c.get("modified"):
+            note = " ".join((c.get("modification_note") or "").split())
+            line += f"; MODIFIED by Particular Conditions{': ' + note if note else ''}"
+        line += ")"
+        if desc:
+            line += f": {desc}"
+        lines.append(line)
+    return "\n".join(lines) or "(no usable clauses in the library)"
+
+
+async def generate_admissibility_assessment(
+    *,
+    events: list[dict],
+    clauses: list[dict],
+    project_name: str | None = None,
+    standard: str | None = None,
+) -> dict:
+    """Build the weighted admissibility matrix from the delay events + clause library.
+
+    Returns {clauses: [{clauseRef, label, marks, source, note, criteria: [{category,
+    subClause, description, overallWtg}]}], summary}. Clause `marks` sum to 100;
+    each clause's criteria `overallWtg` sum to 100.
+    """
+    ctx_bits = []
+    if project_name:
+        ctx_bits.append(f"Project: {project_name}")
+    if standard:
+        ctx_bits.append(f"Contract standard: {standard}")
+    header = " | ".join(ctx_bits)
+
+    user_content = (
+        (header + "\n\n" if header else "")
+        + "DELAY EVENTS REGISTER (base the clause selection and weighting on these)\n"
+        + _events_brief(events)
+        + "\n\nPROJECT CLAUSE LIBRARY (cite these exact clause numbers; flag modified / new)\n"
+        + _clauses_for_admissibility(clauses)
+        + "\n\nBuild the admissibility scoring matrix now. Marks across clauses must sum "
+        "to 100; each clause's criteria weights must sum to 100."
+    )
+
+    async with _client().messages.stream(
+        model=EXTRACTION_MODEL,
+        max_tokens=8192,
+        thinking={"type": "adaptive"},
+        system=[
+            {
+                "type": "text",
+                "text": _ADMISSIBILITY_SYSTEM_PROMPT,
+                "cache_control": {"type": "ephemeral"},
+            },
+            {
+                "type": "text",
+                "text": _ADMISSIBILITY_REFERENCE,
+                "cache_control": {"type": "ephemeral"},
+            },
+        ],
+        messages=[{"role": "user", "content": user_content}],
+        output_config={
+            "effort": "low",
+            "format": {"type": "json_schema", "schema": _ADMISSIBILITY_OUTPUT_SCHEMA},
+        },
+    ) as stream:
+        response = await stream.get_final_message()
+
+    payload = next((b.text for b in response.content if b.type == "text"), "")
+    return json.loads(payload)

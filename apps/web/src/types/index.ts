@@ -198,6 +198,52 @@ export interface ProjectQuery {
   updatedAt?: string;
 }
 
+// ── Admissibility scoring matrix (Project Workspace → Admissibility tab) ───
+/** Where a clause group comes from: the base standard form, amended by the
+ *  Particular Conditions, a new PCC clause, or added by hand. */
+export type AdmissibilityClauseSource = "book" | "modified" | "new" | "manual";
+
+/** One compliance check within a clause group. */
+export interface AdmissibilityCriterion {
+  id: string;
+  /** Procedural stage, e.g. "Delay Notice". */
+  category: string;
+  /** Exact sub-clause, e.g. "20.1A(1)". */
+  subClause: string;
+  description: string;
+  /** Percentage weight within the clause group (values in a group sum to 100). */
+  overallWtg: number;
+}
+
+/** One clause group, allocated a share of the 100 total marks. */
+export interface AdmissibilityClause {
+  id: string;
+  /** Clause reference, e.g. "20", "8.4", "13". */
+  clauseRef: string;
+  /** Group label, e.g. "Clause 20 related". */
+  label: string;
+  /** Marks for this clause (marks across all clauses sum to 100). */
+  marks: number;
+  source: AdmissibilityClauseSource;
+  note: string;
+  criteria: AdmissibilityCriterion[];
+}
+
+export interface AdmissibilityContent {
+  clauses: AdmissibilityClause[];
+  summary: string;
+}
+
+/** The project's admissibility matrix + its generation status. */
+export interface AdmissibilityAssessment {
+  projectId: string;
+  content: AdmissibilityContent | null;
+  model: string | null;
+  status: "" | "running" | "done" | "failed";
+  error: string | null;
+  updatedAt: string | null;
+}
+
 export interface EOTClaim {
   id: string;
   ref: string;

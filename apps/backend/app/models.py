@@ -353,6 +353,34 @@ class EOTClaim(Base):
         }
 
 
+class AdmissibilityAssessment(Base):
+    """The AI-generated admissibility scoring matrix for a project (Admissibility
+    tab). One row per project. `content` holds the structured matrix:
+    {clauses: [{id, clauseRef, label, marks, source, note,
+                criteria: [{id, category, subClause, description, overallWtg}]}],
+     summary}. The clause `marks` split 100 across the selected clauses; each
+    criterion's `overallWtg` is a percentage within its clause. `status` drives
+    background generation polling (""/"running"/"done"/"failed"); the analyst can
+    also edit the matrix, which saves straight to `content`."""
+
+    __tablename__ = "admissibility_assessments"
+
+    projectId: Mapped[str] = mapped_column(String, primary_key=True)
+    content: Mapped[Optional[dict]] = mapped_column(JSON, nullable=True)
+    model: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+    status: Mapped[str] = mapped_column(String, default="")
+    error: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    createdAt: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+    updatedAt: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+
+    _FIELDS = ("projectId", "content", "model", "status", "error", "createdAt", "updatedAt")
+
+    def to_dict(self) -> dict:
+        d = {f: getattr(self, f) for f in self._FIELDS}
+        d["status"] = self.status or ""
+        return d
+
+
 class ClientProposal(Base):
     """The AI-generated client-facing costed proposal for a proposal record
     (Proposals → New Proposal → Proposal tab). One row per proposal. `content`
