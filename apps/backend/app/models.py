@@ -248,6 +248,40 @@ class DelayEvent(Base):
         return d
 
 
+class ProjectQuery(Base):
+    """A query / RFI raised against a project (Project Workspace → Queries tab).
+
+    A register of the questions (RFIs) put to the client / insurer (GIC) about an
+    EOT or delay matter, together with the response received and the query status
+    (Open / Closed). Rows are added manually by the analyst, who also records the
+    GIC response and closes the query once answered. Plain data storage — no AI.
+    Column names mirror the frontend `ProjectQuery` shape exactly.
+    """
+
+    __tablename__ = "project_queries"
+
+    id: Mapped[str] = mapped_column(String, primary_key=True)
+    projectId: Mapped[str] = mapped_column(String, index=True)
+    dateOfRfi: Mapped[str] = mapped_column(String, default="")
+    eotDescription: Mapped[str] = mapped_column(Text, default="")
+    queryDescription: Mapped[str] = mapped_column(Text, default="")
+    responseFromGic: Mapped[str] = mapped_column(Text, default="")
+    dateOfResponse: Mapped[str] = mapped_column(String, default="")
+    status: Mapped[str] = mapped_column(String, default="Open")
+    remarks: Mapped[str] = mapped_column(Text, default="")
+    createdAt: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+    updatedAt: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+
+    _FIELDS = (
+        "id", "projectId", "dateOfRfi", "eotDescription", "queryDescription",
+        "responseFromGic", "dateOfResponse", "status", "remarks",
+        "createdAt", "updatedAt",
+    )
+
+    def to_dict(self) -> dict:
+        return {f: getattr(self, f) for f in self._FIELDS}
+
+
 class ProjectClause(Base):
     """A clause in a single project's own Clause Library.
 
