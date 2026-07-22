@@ -4,9 +4,13 @@ import {
   createProjectClauseApi,
   deleteProjectClauseApi,
   extractProjectClausesApi,
+  getClauseBookApi,
   getClauseExtractStatusApi,
+  getPccStatusApi,
   listProjectClausesApi,
+  selectClauseBookApi,
   updateProjectClauseApi,
+  uploadPccApi,
   type ProjectClauseCreatePayload,
   type ProjectClauseUpdatePayload,
 } from "@/api/projectClauses";
@@ -73,6 +77,74 @@ export function useClauseExtractStatus(projectId: string) {
   const query = useQuery({
     queryKey: clauseExtractStatusKey(projectId),
     queryFn: () => getClauseExtractStatusApi(projectId),
+    enabled: !!projectId,
+    refetchInterval: (q) => (q.state.data?.status === "running" ? 3000 : false),
+  });
+
+  const prev = useRef<string | undefined>(undefined);
+  useEffect(() => {
+    const status = query.data?.status;
+    if (prev.current === "running" && (status === "done" || status === "failed")) {
+      qc.invalidateQueries({ queryKey: projectClausesKey(projectId) });
+    }
+    prev.current = status;
+  }, [query.data?.status, projectId, qc]);
+
+  return query;
+}
+
+// ── Base contract book (Knowledge Center → project) ──────────────────────────
+
+export const clauseBookKey = (projectId: string) => ["clause-book", projectId] as const;
+
+/** The Knowledge-Center book chosen as this project's base clause set. */
+export function useClauseBookQuery(projectId: string) {
+  return useQuery({
+    queryKey: clauseBookKey(projectId),
+    queryFn: () => getClauseBookApi(projectId),
+    enabled: !!projectId,
+  });
+}
+
+/** Pick a base book; its clauses are copied into the project's library. */
+export function useSelectClauseBook(projectId: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (bookId: string) => selectClauseBookApi(projectId, bookId),
+    onSuccess: (res) => {
+      qc.setQueryData(clauseBookKey(projectId), res.bookId);
+      qc.invalidateQueries({ queryKey: projectClausesKey(projectId) });
+      // A new base book clears any prior PCC comparison state.
+      qc.setQueryData(pccStatusKey(projectId), { status: "idle" });
+    },
+  });
+}
+
+// ── Particular Conditions (PCC) comparison ───────────────────────────────────
+
+export const pccStatusKey = (projectId: string) => ["pcc-status", projectId] as const;
+
+/** Upload the project's Particular Conditions; the backend compares them against
+ * the base book in the background. Seeds the status query so polling starts. */
+export function useUploadPcc(projectId: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (file: File) => uploadPccApi(projectId, file),
+    onSuccess: (res) =>
+      qc.setQueryData(pccStatusKey(projectId), {
+        status: res.status,
+        error: res.status === "idle" ? res.message : undefined,
+      }),
+  });
+}
+
+/** Polls background PCC-comparison status; when it finishes, refreshes the
+ * clause list so the newly-flagged "Modified" clauses appear. */
+export function usePccStatus(projectId: string) {
+  const qc = useQueryClient();
+  const query = useQuery({
+    queryKey: pccStatusKey(projectId),
+    queryFn: () => getPccStatusApi(projectId),
     enabled: !!projectId,
     refetchInterval: (q) => (q.state.data?.status === "running" ? 3000 : false),
   });

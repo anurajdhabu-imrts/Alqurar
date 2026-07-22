@@ -17,6 +17,11 @@ export interface CostingLine {
   group?: boolean;
   /** A sub-line nested under the group header above it. */
   sub?: boolean;
+  /** The "Costing" line — its amount is the Cost Sheet's Suggested Pricing. */
+  costing?: boolean;
+  /** Total estimated work-hours behind the Costing line; when set, a
+   * "N hours · amount" summary is shown beneath it. */
+  hours?: number;
 }
 
 /** An admin-priced commercial line item (amount kept as a string for the form). */
@@ -29,6 +34,8 @@ export interface ProposalLineItem {
   group?: boolean;
   /** A delay-event line nested under the group header above it. */
   sub?: boolean;
+  /** The "Costing" line — priced from the Cost Sheet, not typed. */
+  costing?: boolean;
 }
 
 /** Admin-entered fields that steer proposal generation. */

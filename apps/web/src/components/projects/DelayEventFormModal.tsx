@@ -2,6 +2,7 @@ import { useState, type FormEvent } from "react";
 import { AlertTriangle, CheckCircle2, ListChecks, Loader2, X } from "lucide-react";
 import { apiErrorMessage } from "@/api/client";
 import { useCreateDelayEvent, useUpdateDelayEvent } from "@/hooks/useDelayEvents";
+import { useProjectClausesQuery } from "@/hooks/useProjectClauses";
 import type {
   AdmissibilityStatus,
   DelayCause,
@@ -35,6 +36,9 @@ export function DelayEventFormModal({
   const isEdit = !!event;
   const create = useCreateDelayEvent(projectId);
   const update = useUpdateDelayEvent(projectId);
+  // The project's own Clause Library — the clause field suggests these so events
+  // cite exact library clauses and link up in the detail panel.
+  const { data: libraryClauses = [] } = useProjectClausesQuery(projectId);
 
   const [title, setTitle] = useState(event?.title ?? "");
   const [category, setCategory] = useState(event?.category ?? "");
@@ -135,14 +139,22 @@ export function DelayEventFormModal({
 
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div>
-              <label className="label" htmlFor="de-clause">FIDIC clause</label>
+              <label className="label" htmlFor="de-clause">Contract clause</label>
               <input
                 id="de-clause"
                 className="input"
                 placeholder="e.g. Sub-Clause 8.5"
                 value={clause}
                 onChange={(e) => setClause(e.target.value)}
+                list="de-clause-options"
               />
+              <datalist id="de-clause-options">
+                {libraryClauses.map((c) => (
+                  <option key={c.id} value={`Sub-Clause ${c.clause}`}>
+                    {`${c.clause} — ${c.title}`}
+                  </option>
+                ))}
+              </datalist>
             </div>
             <div>
               <label className="label" htmlFor="de-admiss">Admissibility</label>

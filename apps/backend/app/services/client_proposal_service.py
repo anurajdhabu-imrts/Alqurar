@@ -16,7 +16,7 @@ import anthropic
 
 from app.db import SessionLocal
 from app.models import ClientProposal
-from app.services import delay_event_service, document_service, project_service
+from app.services import costing_service, delay_event_service, document_service, project_service
 from app.services.ai_service import MODEL, generate_client_proposal
 
 _sem = asyncio.Semaphore(int(os.getenv("PROPOSAL_CONCURRENCY", "2")))
@@ -121,7 +121,7 @@ def save_inputs(project_id: str, inputs: Dict) -> Dict:
         merged.update({k: v for k, v in (inputs or {}).items()})
         row.inputs = merged
         if row.content:
-            row.content = _apply_admin_fields(row.content, merged)
+            row.content = _apply_admin_fields(project_id, row.content, merged)
         row.updatedAt = _now()
         db.commit()
         return row.to_dict()
@@ -147,32 +147,131 @@ def _children(priced: list, group_index: int) -> list:
     return out
 
 
-def _apply_admin_commercials(content: dict, inputs: dict) -> dict:
+def _costing_summary(project_id: str) -> dict:
+    """The proposal's Cost Sheet rolled up for the client-facing costing lines.
+
+    Returns one base line per activity (its name, work-hours and base cost) and the
+    marked-up components — Contingency, Overheads, Profit, Income Tax and VAT — so
+    the commercial table can list each as its own row. `hours`/`amount` carry the
+    totals (total work-hours and the marked-up Suggested Pricing) for the no-detail
+    fallback. Empty sheet → zeros / empty lists."""
+    sheet = costing_service.get_sheet(project_id)
+    activities = []
+    for a in sheet.get("activities", []):
+        a_hours = sum(float(e.get("hours") or 0) for e in a.get("entries", []))
+        a_amount = float(a.get("total") or 0) or sum(
+            float(e.get("hours") or 0) * float(e.get("rate") or 0)
+            for e in a.get("entries", [])
+        )
+        if a_amount <= 0 and a_hours <= 0:
+            continue
+        activities.append({
+            "name": str(a.get("description") or "").strip(),
+            "hours": a_hours,
+            "amount": a_amount,
+        })
+
+    s = sheet.get("summary") or {}
+    markups = [
+        {"item": "Contingency", "pct": float(s.get("contingencyPct") or 0), "amount": float(s.get("contingencyAmount") or 0)},
+        {"item": "Overheads", "pct": float(s.get("overheadsPct") or 0), "amount": float(s.get("overheadsAmount") or 0)},
+        {"item": "Profit", "pct": float(s.get("profitPct") or 0), "amount": float(s.get("profitAmount") or 0)},
+        {"item": "Income Tax", "pct": float(s.get("incomeTaxPct") or 0), "amount": float(s.get("incomeTaxAmount") or 0)},
+        {"item": "VAT", "pct": float(s.get("vatPct") or 0), "amount": float(s.get("vatAmount") or 0)},
+    ]
+    return {
+        "hours": sum(x["hours"] for x in activities),
+        "amount": float(s.get("suggestedPricing") or 0),
+        "activities": activities,
+        "markups": markups,
+    }
+
+
+def _apply_admin_commercials(content: dict, inputs: dict, costing=None) -> dict:
     """When the admin has priced the line items, use them verbatim as the costing
     (so the fees are exact, not AI-invented) and recompute the net total after any
     special discount.
 
     A group line (e.g. "Delay Analysis") carries no price of its own — it is priced
-    by the sub-lines nested under it, and shows their subtotal."""
+    by the sub-lines nested under it, and shows their subtotal.
+
+    The 'Costing' line (flagged `costing`) is priced from the Cost Sheet and expands
+    into several top-level rows: one base line per activity (its work-hours and base
+    cost) followed by a line for each non-zero markup (Contingency, Overheads,
+    Profit, Income Tax, VAT); a 0% markup such as VAT at 0% is omitted. With no Cost
+    Sheet the single line is dropped unless a price was typed."""
+    cost = costing or {}
     items = (inputs or {}).get("lineItems") or []
-    kept = [
-        it
-        for it in items
-        if str(it.get("item", "")).strip()
-        and (it.get("group") or str(it.get("amount", "")).strip())
-    ]
-    priced = [
-        {
-            "item": str(it.get("item", "")).strip(),
+
+    priced = []
+    for it in items:
+        item = str(it.get("item", "")).strip()
+        if not item:
+            continue
+        is_group = bool(it.get("group"))
+        is_sub = bool(it.get("sub"))
+        is_costing = bool(it.get("costing"))
+        typed = str(it.get("amount", "")).strip()
+        amount = _to_number(it.get("amount"))
+        hours = None
+
+        if is_costing:
+            # The client-facing fee, sourced from the Cost Sheet. Expand it into one
+            # base line per activity plus a line for each non-zero markup
+            # (Contingency, Overheads, Profit, Income Tax, VAT), all top-level rows.
+            activities = cost.get("activities") or []
+            markups = cost.get("markups") or []
+            if activities:
+                base_desc = str(it.get("description", "")).strip()
+                base_tl = str(it.get("timeline", "")).strip()
+                for a in activities:
+                    priced.append({
+                        "item": str(a.get("name") or "").strip() or "Professional fee",
+                        "description": base_desc,
+                        "timeline": base_tl,
+                        "amount": float(a.get("amount") or 0),
+                        "group": False,
+                        "sub": False,
+                        "costing": True,
+                        "hours": float(a.get("hours") or 0),
+                    })
+                for m in markups:
+                    m_amount = float(m.get("amount") or 0)
+                    if round(m_amount, 3) == 0:
+                        continue  # hide zero / 0% markups (e.g. VAT at 0%)
+                    priced.append({
+                        "item": str(m.get("item") or "").strip(),
+                        "description": "",
+                        "timeline": "",
+                        "amount": m_amount,
+                        "group": False,
+                        "sub": False,
+                        "costing": True,
+                    })
+                continue  # expanded into rows above — skip the single-row append
+            if not typed:
+                continue  # no Cost Sheet and no typed price → omit the line
+            # else: no sheet but a manual price was typed → keep one line below.
+        elif is_sub and not typed:
+            continue  # unpriced delay-event line → skip
+        elif not is_group and not is_sub and not typed:
+            continue  # unpriced top-level line → skip
+
+        row = {
+            "item": item,
             "description": str(it.get("description", "")).strip(),
             "timeline": str(it.get("timeline", "")).strip(),
-            "amount": _to_number(it.get("amount")),
-            "group": bool(it.get("group")),
-            "sub": bool(it.get("sub")),
+            "amount": amount,
+            "group": is_group,
+            "sub": is_sub,
         }
-        for it in kept
-    ]
-    # Drop a group header whose sub-lines were all left unpriced.
+        if is_costing:
+            row["costing"] = True
+        if hours is not None:
+            row["hours"] = hours
+        priced.append(row)
+
+    # Drop a group header whose sub-lines were all skipped.
     priced = [
         c
         for i, c in enumerate(priced)
@@ -180,9 +279,7 @@ def _apply_admin_commercials(content: dict, inputs: dict) -> dict:
     ]
     for i, c in enumerate(priced):
         if c["group"]:
-            c["amount"] = sum(
-                s["amount"] for s in _children(priced, i)
-            )
+            c["amount"] = sum(s["amount"] for s in _children(priced, i))
     if not any(not c["group"] for c in priced):
         return content
 
@@ -208,10 +305,11 @@ def _apply_admin_commercials(content: dict, inputs: dict) -> dict:
     return content
 
 
-def _apply_admin_fields(content: dict, inputs: dict) -> dict:
+def _apply_admin_fields(project_id: str, content: dict, inputs: dict) -> dict:
     """Overlay everything the admin owns onto a generated proposal: the exact
-    prices and their grouping, and the assigned reference."""
-    content = _apply_admin_commercials(content, inputs)
+    prices and their grouping (with the Costing line priced from the Cost Sheet),
+    and the assigned reference."""
+    content = _apply_admin_commercials(content, inputs, _costing_summary(project_id))
     reference = str((inputs or {}).get("reference") or "").strip()
     if reference:
         content = {**content, "reference": reference}
@@ -247,7 +345,7 @@ async def run_generation(project_id: str) -> None:
             )
             # Admin-entered prices and reference are authoritative — they override
             # whatever the AI drafted.
-            content = _apply_admin_fields(content, inputs)
+            content = _apply_admin_fields(project_id, content, inputs)
             _set(project_id, content=content, model=MODEL, status="done", error=None)
         except anthropic.AuthenticationError:
             _set(project_id, status="failed", error=_NOT_CONFIGURED)

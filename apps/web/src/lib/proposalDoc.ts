@@ -26,7 +26,7 @@ import {
 } from "docx";
 import type { ClientProposal } from "@/api/clientProposals";
 import { formatCurrencyFull } from "@/lib/utils";
-import { rowNumbers } from "@/lib/proposalCosting";
+import { displayDescription, rowNumbers } from "@/lib/proposalCosting";
 
 type Content = NonNullable<ClientProposal["content"]>;
 
@@ -153,19 +153,21 @@ function commercialTable(doc: Content): (Paragraph | Table)[] {
         th(`Amount (${doc.currency})`, AlignmentType.RIGHT),
       ],
     }),
-    ...doc.costing.map(
-      (c, i) =>
-        new TableRow({
+    ...doc.costing.map((c, i) => {
+      const desc = displayDescription(c.description);
+      return new TableRow({
           children: [
-            td([new TextRun({ text: numbers[i], size: 20 })], AlignmentType.CENTER),
+            td([new TextRun({ text: c.sub ? "" : numbers[i], size: 20 })], AlignmentType.CENTER),
             new TableCell({
-              // Nested delay-event lines sit indented under their group header.
+              // Nested delay-event lines sit indented under their group header, with
+              // their number (2.1, 2.2…) prefixed to the item name in bold rather than
+              // shown in the Sl.No column.
               children: [
                 new Paragraph({
                   indent: c.sub ? { left: 240 } : undefined,
                   children: [
-                    new TextRun({ text: c.item, bold: true, size: 21, color: c.group ? NAVY : undefined }),
-                    ...(c.description ? [new TextRun({ break: 1, text: c.description, size: 19, color: GREY })] : []),
+                    new TextRun({ text: c.sub ? `${numbers[i]} ${c.item}` : c.item, bold: true, size: 21, color: c.group ? NAVY : undefined }),
+                    ...(desc ? [new TextRun({ break: 1, text: desc, size: 19, color: GREY })] : []),
                   ],
                 }),
               ],
@@ -175,8 +177,8 @@ function commercialTable(doc: Content): (Paragraph | Table)[] {
             // too would read as double-counting against the total.
             td([new TextRun({ text: c.group ? "" : formatCurrencyFull(c.amount, doc.currency), size: 21 })], AlignmentType.RIGHT),
           ],
-        }),
-    ),
+        });
+    }),
     new TableRow({
       children: [
         new TableCell({

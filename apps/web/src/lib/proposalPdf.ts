@@ -8,7 +8,7 @@
 import { jsPDF } from "jspdf";
 import type { ClientProposal } from "@/api/clientProposals";
 import { formatCurrencyFull } from "@/lib/utils";
-import { rowNumbers } from "@/lib/proposalCosting";
+import { displayDescription, rowNumbers } from "@/lib/proposalCosting";
 
 type Content = NonNullable<ClientProposal["content"]>;
 type RGB = [number, number, number];
@@ -313,19 +313,23 @@ export function downloadProposalPdf(doc: Content, opts: ProposalPdfOpts): void {
     const numbers = rowNumbers(doc.costing);
     doc.costing.forEach((c, i) => {
       pdf.setFontSize(size);
-      // Nested delay-event lines are indented under their group header.
+      // Nested delay-event lines are indented under their group header, and their
+      // number (2.1, 2.2…) is prefixed to the item name rather than shown in the
+      // Sl.No column, which carries only the top-level number.
       const indent = c.sub ? 12 : 0;
       const textX = M + noW + pad + indent;
       const textW = descW - 2 * pad - indent;
-      const itemLines = wrap([{ text: c.item, bold: true }], textW, size);
-      const descLines = c.description ? wrap([{ text: c.description }], textW, size - 1) : [];
+      const itemText = c.sub ? `${numbers[i]} ${c.item}` : c.item;
+      const itemLines = wrap([{ text: itemText, bold: true }], textW, size);
+      const desc = displayDescription(c.description);
+      const descLines = desc ? wrap([{ text: desc }], textW, size - 1) : [];
       const rowH = Math.max((itemLines.length + descLines.length) * lh + 2 * pad, 30);
       ensure(rowH);
       const y0 = y;
       borders(y0, rowH);
       setFont(false, false);
       setColor(BODY);
-      center(numbers[i], M, noW, y0 + rowH / 2 + size / 3);
+      center(c.sub ? "" : numbers[i], M, noW, y0 + rowH / 2 + size / 3);
       let dy = y0 + pad + size * 0.9;
       itemLines.forEach((ln) => {
         drawRunLine(ln, textX, dy, size, c.group ? NAVY : BODY);

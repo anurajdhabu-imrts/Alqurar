@@ -58,6 +58,63 @@ def _extract_pdf(raw: bytes, max_chars: int = MAX_CHARS) -> str:
         return "\n".join(parts)
 
 
+def _extract_docx(raw: bytes) -> str:
+    """Extract text from a .docx, INCLUDING tables, headers and footers.
+
+    Particular Conditions / Contract Data are frequently laid out in tables (and
+    sometimes headers), which `document.paragraphs` alone misses entirely — so we
+    walk the body in document order and pull every table cell as well, then append
+    header/footer text from each section.
+    """
+    import docx
+    from docx.document import Document as _Doc
+    from docx.oxml.table import CT_Tbl
+    from docx.oxml.text.paragraph import CT_P
+    from docx.table import Table, _Cell
+    from docx.text.paragraph import Paragraph
+
+    document = docx.Document(io.BytesIO(raw))
+
+    def _iter_block_text(parent) -> list[str]:
+        """Yield text from paragraphs and tables of a body/cell, in order."""
+        if isinstance(parent, _Doc):
+            elm = parent.element.body
+        elif isinstance(parent, _Cell):
+            elm = parent._tc
+        else:
+            elm = parent
+        out: list[str] = []
+        for child in elm.iterchildren():
+            if isinstance(child, CT_P):
+                t = Paragraph(child, parent).text
+                if t.strip():
+                    out.append(t)
+            elif isinstance(child, CT_Tbl):
+                table = Table(child, parent)
+                for row in table.rows:
+                    cells = []
+                    for cell in row.cells:
+                        cells.append(" ".join(_iter_block_text(cell)).strip())
+                    line = " | ".join(c for c in cells if c)
+                    if line.strip():
+                        out.append(line)
+        return out
+
+    parts = _iter_block_text(document)
+
+    # Headers and footers (subject-line boilerplate, appendix titles, etc.).
+    for section in document.sections:
+        for hf in (section.header, section.footer):
+            try:
+                hf_text = "\n".join(p.text for p in hf.paragraphs if p.text.strip())
+            except Exception:
+                hf_text = ""
+            if hf_text.strip():
+                parts.append(hf_text)
+
+    return "\n".join(parts)
+
+
 def extract_text(filename: str, raw: bytes, max_chars: int = MAX_CHARS) -> tuple[str, bool]:
     """Return (text, truncated). `text` is "" when the format isn't extractable
     (e.g. an image, or a scanned PDF with no embedded text → handled by OCR).
@@ -73,10 +130,9 @@ def extract_text(filename: str, raw: bytes, max_chars: int = MAX_CHARS) -> tuple
         if ext == "pdf":
             text = _extract_pdf(raw, max_chars)
         elif ext in ("docx", "doc"):
-            import docx
-
-            document = docx.Document(io.BytesIO(raw))
-            text = "\n".join(p.text for p in document.paragraphs)
+            # Handles paragraphs AND tables/headers/footers. A legacy binary .doc
+            # is not a zip and raises here → caught below → OCR/empty fallback.
+            text = _extract_docx(raw)
         elif ext == "pptx":
             from pptx import Presentation
 

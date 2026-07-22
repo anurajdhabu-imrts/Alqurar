@@ -445,4 +445,10 @@ export interface ClauseRef {
   title: string;
   summary: string;
   tags: string[];
+  /** Where the clause came from: "manual" | "book" | "ai". */
+  source?: string;
+  /** True when the project's Particular Conditions amend this base clause. */
+  modified?: boolean;
+  /** One-line note on what the Particular Conditions changed. */
+  modificationNote?: string;
 }

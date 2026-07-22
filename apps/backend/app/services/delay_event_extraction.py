@@ -12,7 +12,12 @@ from typing import Dict, List, Optional, Tuple
 
 import anthropic
 
-from app.services import delay_event_service, document_service, project_service
+from app.services import (
+    delay_event_service,
+    document_service,
+    project_clause_service,
+    project_service,
+)
 from app.services.ai_service import extract_delay_events
 from app.services.document_extract import extract_text
 
@@ -76,12 +81,13 @@ def _map_event(raw: dict, docs_by_name: dict) -> dict:
     }
 
 
-def _load(project_id: str) -> Tuple[Optional[dict], List[dict], dict]:
+def _load(project_id: str) -> Tuple[Optional[dict], List[dict], dict, List[dict]]:
     """Blocking: load the project + every document's text (run in a thread).
 
     Reuses the text cached during analysis (incl. OCR) and only reads bytes for
     documents that haven't been analysed yet — so extraction is fast and never
-    re-OCRs.
+    re-OCRs. Also loads the project's Clause Library so extracted events cite
+    those exact clauses.
     """
     project = project_service.get_project(project_id)
     docs_for_ai: List[dict] = []
@@ -94,7 +100,8 @@ def _load(project_id: str) -> Tuple[Optional[dict], List[dict], dict]:
             text = extract_text(stored[1], stored[0])[0] if stored else ""
         docs_for_ai.append({"name": name, "type": doc_type, "text": text, "truncated": False})
         docs_by_name[name] = {"id": doc_id, "name": name, "type": doc_type}
-    return project, docs_for_ai, docs_by_name
+    clauses = project_clause_service.list_by_project(project_id)
+    return project, docs_for_ai, docs_by_name, clauses
 
 
 async def run_extraction(project_id: str) -> None:
@@ -106,7 +113,7 @@ async def run_extraction(project_id: str) -> None:
                 _status[project_id] = {"status": "failed", "error": _NOT_CONFIGURED}
                 return
 
-            project, docs_for_ai, docs_by_name = await asyncio.to_thread(_load, project_id)
+            project, docs_for_ai, docs_by_name, clauses = await asyncio.to_thread(_load, project_id)
             if not project:
                 _status[project_id] = {"status": "failed", "error": "Project not found."}
                 return
@@ -121,6 +128,7 @@ async def run_extraction(project_id: str) -> None:
                 documents=docs_for_ai,
                 standard=project.get("standard"),
                 project_name=project.get("name"),
+                clauses=clauses,
             )
             mapped = [_map_event(ev, docs_by_name) for ev in raw_events]
             stored = await asyncio.to_thread(
