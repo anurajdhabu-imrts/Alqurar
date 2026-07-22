@@ -13,6 +13,7 @@ import {
   MessageSquareText,
   Paperclip,
   Pencil,
+  Scale,
   Sparkles,
   UserPlus,
   Users,
@@ -29,6 +30,7 @@ import { DelayEventsTab } from "@/components/projects/DelayEventsTab";
 import { EventsByDocumentTab } from "@/components/projects/EventsByDocumentTab";
 import { QueriesTab } from "@/components/projects/QueriesTab";
 import { ChronologyTab } from "@/components/projects/ChronologyTab";
+import { AdmissibilityTab } from "@/components/projects/AdmissibilityTab";
 import { ProposalTab } from "@/components/projects/ProposalTab";
 import { ClauseLibraryTab } from "@/components/projects/ClauseLibraryTab";
 import { UploadedDocsList } from "@/components/client/UploadedDocsList";
@@ -150,6 +152,7 @@ export function ProjectWorkspacePage() {
           { id: "eventsByDoc", label: "Events by Document", icon: FileStack },
           { id: "queries", label: "Queries", icon: MessageSquareText },
           { id: "chronology", label: "Chronology", icon: History },
+          { id: "admissibility", label: "Admissibility", icon: Scale },
           { id: "proposal", label: "EOT Report", icon: FileSignature },
           // ── Hidden for now — uncomment when these modules are built ──
           // { id: "windows", label: "Windows Analysis", icon: GanttChartSquare },
@@ -287,6 +290,7 @@ export function ProjectWorkspacePage() {
         {tab === "eventsByDoc" && <EventsByDocumentTab projectId={id} />}
         {tab === "queries" && <QueriesTab projectId={id} />}
         {tab === "chronology" && <ChronologyTab projectId={id} />}
+        {tab === "admissibility" && <AdmissibilityTab projectId={id} />}
         {tab === "proposal" && <ProposalTab projectId={id} />}
         {tab === "clauses" && <ClauseLibraryTab projectId={id} projectStandard={project.standard} />}
         {/* ── Hidden for now — uncomment when these modules are built ──

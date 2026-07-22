@@ -267,6 +267,34 @@ h4 {
     color: var(--color-ink);
   }
 
+  /* Compact, spreadsheet-style editable cell — borderless until hover/focus.
+     Used by the Admissibility matrix so inline editing reads like a grid. */
+  .cell {
+    padding: 4px 8px;
+    border: 1px solid transparent;
+    border-radius: 6px;
+    background-color: transparent;
+    font-family: var(--font-sans);
+    font-size: 14px;
+    color: var(--color-ink);
+    outline: none;
+    transition: border-color 0.15s ease, box-shadow 0.15s ease, background-color 0.15s ease;
+  }
+
+  .cell::placeholder {
+    color: var(--color-faint);
+  }
+
+  .cell:hover {
+    border-color: var(--color-border-strong);
+  }
+
+  .cell:focus {
+    background-color: #fff;
+    border-color: var(--color-emerald-500);
+    box-shadow: 0 0 0 3px rgba(31, 164, 98, 0.14);
+  }
+
   .badge {
     display: inline-flex;
     align-items: center;
