@@ -7,18 +7,19 @@ import {
   FileSignature,
   FileStack,
   FolderKanban,
+  History,
   ListChecks,
   Loader2,
+  MessageSquareText,
   Paperclip,
   Pencil,
   Sparkles,
   UserPlus,
   Users,
-  // ── Hidden for now — uncomment with their tabs (Windows / Queries / EOT Claim) ──
+  // ── Hidden for now — uncomment with their tabs (Windows / EOT Claim) ──
   // FileSignature,
   // FileText,
   // GanttChartSquare,
-  // MessageSquareText,
 } from "lucide-react";
 import { Badge, type Tone } from "@/components/ui/Badge";
 import { Card, CardHeader } from "@/components/ui/Card";
@@ -26,6 +27,8 @@ import { Tabs } from "@/components/ui/Tabs";
 import { DocumentsPanel } from "@/components/DocumentsPanel";
 import { DelayEventsTab } from "@/components/projects/DelayEventsTab";
 import { EventsByDocumentTab } from "@/components/projects/EventsByDocumentTab";
+import { QueriesTab } from "@/components/projects/QueriesTab";
+import { ChronologyTab } from "@/components/projects/ChronologyTab";
 import { ProposalTab } from "@/components/projects/ProposalTab";
 import { ClauseLibraryTab } from "@/components/projects/ClauseLibraryTab";
 import { UploadedDocsList } from "@/components/client/UploadedDocsList";
@@ -145,10 +148,11 @@ export function ProjectWorkspacePage() {
           { id: "clauses", label: "Clause Library", icon: BookText },
           { id: "events", label: "Delay Events", icon: ListChecks },
           { id: "eventsByDoc", label: "Events by Document", icon: FileStack },
+          { id: "queries", label: "Queries", icon: MessageSquareText },
+          { id: "chronology", label: "Chronology", icon: History },
           { id: "proposal", label: "EOT Report", icon: FileSignature },
           // ── Hidden for now — uncomment when these modules are built ──
           // { id: "windows", label: "Windows Analysis", icon: GanttChartSquare },
-          // { id: "queries", label: "Queries", icon: MessageSquareText },
           // { id: "claim", label: "EOT Claim", icon: FileSignature },
         ]}
       />
@@ -281,6 +285,8 @@ export function ProjectWorkspacePage() {
         {/* ── Pipeline tabs (next to build) ── */}
         {tab === "events" && <DelayEventsTab projectId={id} />}
         {tab === "eventsByDoc" && <EventsByDocumentTab projectId={id} />}
+        {tab === "queries" && <QueriesTab projectId={id} />}
+        {tab === "chronology" && <ChronologyTab projectId={id} />}
         {tab === "proposal" && <ProposalTab projectId={id} />}
         {tab === "clauses" && <ClauseLibraryTab projectId={id} projectStandard={project.standard} />}
         {/* ── Hidden for now — uncomment when these modules are built ──

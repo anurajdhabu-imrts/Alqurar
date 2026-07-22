@@ -175,6 +175,29 @@ export interface ProjectDelayEvent {
   sources: DelayEventSource[];
 }
 
+// ── Project queries / RFI register (Project Workspace → Queries tab) ──────
+export type QueryStatus = "Open" | "Closed";
+
+/** One query / RFI raised on a project, with the GIC response and its status. */
+export interface ProjectQuery {
+  id: string;
+  projectId: string;
+  /** ISO date the RFI was raised. */
+  dateOfRfi: string;
+  /** The EOT / delay matter the query concerns. */
+  eotDescription: string;
+  /** The question put to the client / GIC. */
+  queryDescription: string;
+  /** The response received from GIC (recorded by the analyst, or by the client). */
+  responseFromGic: string;
+  /** ISO date the response was received. */
+  dateOfResponse: string;
+  status: QueryStatus;
+  remarks: string;
+  createdAt?: string;
+  updatedAt?: string;
+}
+
 export interface EOTClaim {
   id: string;
   ref: string;

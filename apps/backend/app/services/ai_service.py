@@ -522,6 +522,143 @@ async def extract_delay_events(
     return data.get("events", [])
 
 
+# ── Per-event chronology generation ─────────────────────────────────────────
+# Builds a detailed, dated chronology for EACH existing delay event, grounded in
+# the project's data-room documents. The output replaces each event's
+# `chronology` (see services/chronology_generation.py), so the Chronology tab
+# tells the story of every delay from the correspondence and site records.
+
+_CHRONOLOGY_SYSTEM_PROMPT = (
+    "You are a forensic delay analyst assembling the CHRONOLOGY of events for an "
+    "Extension of Time (EOT) claim under standards such as FIDIC, NEC4 and CPWD. "
+    "You are given (1) the register of delay events already identified for a "
+    "project — each with a reference such as 'DE-01' — and (2) the extracted text "
+    "of the project's data-room documents. For EACH delay event, build the ordered "
+    "sequence of correspondence and site events that tells the story of that delay.\n\n"
+    "Rules:\n"
+    "- Produce one chronology per delay event, keyed by the event's EXACT 'eventRef' "
+    "as given (e.g. 'DE-01'). Do not invent event references.\n"
+    "- Ground every entry in the document text. Do NOT invent dates, events, parties "
+    "or figures that the documents do not support.\n"
+    "- Order each chronology by date, earliest first.\n"
+    "- 'date' is ISO format (YYYY-MM-DD); use an empty string only when the document "
+    "gives no date.\n"
+    "- 'actor' is who took the step: 'Contractor', 'Engineer', 'Employer' or 'System'.\n"
+    "- 'title' is a short one-line description of the step (e.g. 'RFI-042 raised for "
+    "IFC drawings'); 'detail' adds one or two sentences of context.\n"
+    "- 'sourceDocument' is the EXACT filename (from those provided) that evidences the "
+    "step; use an empty string if no single document does.\n"
+    "- If a delay event has no supporting chronology in the documents, return an empty "
+    "chronology array for it."
+)
+
+_CHRON_ITEM_SCHEMA = {
+    "type": "object",
+    "properties": {
+        "date": {"type": "string"},
+        "actor": {
+            "type": "string",
+            "enum": ["Contractor", "Engineer", "Employer", "System"],
+        },
+        "title": {"type": "string"},
+        "detail": {"type": "string"},
+        "sourceDocument": {"type": "string"},
+    },
+    "required": ["date", "actor", "title", "detail", "sourceDocument"],
+    "additionalProperties": False,
+}
+
+_EVENT_CHRON_SCHEMA = {
+    "type": "object",
+    "properties": {
+        "eventRef": {"type": "string"},
+        "chronology": {"type": "array", "items": _CHRON_ITEM_SCHEMA},
+    },
+    "required": ["eventRef", "chronology"],
+    "additionalProperties": False,
+}
+
+_CHRONOLOGY_OUTPUT_SCHEMA = {
+    "type": "object",
+    "properties": {"chronologies": {"type": "array", "items": _EVENT_CHRON_SCHEMA}},
+    "required": ["chronologies"],
+    "additionalProperties": False,
+}
+
+
+def _events_for_chronology(events: list[dict]) -> str:
+    """Render the delay-event register compactly so the model can key chronologies
+    back to each event by its exact reference."""
+    lines = []
+    for e in events:
+        lines.append(
+            f"\n### {e.get('ref', '')} — {e.get('title', '')}\n"
+            f"Cause: {e.get('cause', '')} | Period: {e.get('startDate', '')} → "
+            f"{e.get('endDate', '')} | Days impact: {e.get('daysImpact', 0)}\n"
+            f"Narrative: {e.get('narrative', '')}"
+        )
+        srcs = e.get("sources") or []
+        if srcs:
+            lines.append("Linked documents: " + ", ".join(s.get("name", "") for s in srcs))
+    return "\n".join(lines) or "(no delay events)"
+
+
+async def generate_event_chronologies(
+    *,
+    events: list[dict],
+    documents: list[dict],
+    project_name: str | None = None,
+    standard: str | None = None,
+) -> list[dict]:
+    """Build a dated chronology per delay event from the project's documents.
+
+    `events` is the stored delay-event register (each with a 'ref'); `documents`
+    is a list of {"name", "type", "text", "truncated"} dicts. Returns a list of
+    {"eventRef", "chronology": [{date, actor, title, detail, sourceDocument}]} —
+    the caller maps each chronology back onto its event by ref.
+    """
+    ctx_bits = []
+    if project_name:
+        ctx_bits.append(f"Project: {project_name}")
+    if standard:
+        ctx_bits.append(f"Contract standard: {standard}")
+    header = " | ".join(ctx_bits)
+
+    blocks = [header] if header else []
+    blocks.append(
+        "\n===== DELAY EVENTS REGISTER (build one chronology per event, keyed by eventRef) ====="
+    )
+    blocks.append(_events_for_chronology(events))
+    for d in documents:
+        name = d.get("name", "document")
+        note = " (truncated)" if d.get("truncated") else ""
+        body = d.get("text") or "(no machine-readable text — use the filename only)"
+        blocks.append(f"\n===== Document: {name} [{d.get('type', 'Other')}]{note} =====\n{body}")
+    user_content = "\n".join(blocks)
+
+    async with _client().messages.stream(
+        model=EXTRACTION_MODEL,
+        max_tokens=8192,
+        thinking={"type": "adaptive"},
+        system=[
+            {
+                "type": "text",
+                "text": _CHRONOLOGY_SYSTEM_PROMPT,
+                "cache_control": {"type": "ephemeral"},
+            }
+        ],
+        messages=[{"role": "user", "content": user_content}],
+        output_config={
+            "effort": "low",
+            "format": {"type": "json_schema", "schema": _CHRONOLOGY_OUTPUT_SCHEMA},
+        },
+    ) as stream:
+        response = await stream.get_final_message()
+
+    payload = next((b.text for b in response.content if b.type == "text"), "")
+    return json.loads(payload).get("chronologies", [])
+
+
 # ── Clause extraction (per project's own Clause Library) ────────────────────
 # Reads a project's contract and drafts the clauses an EOT claim relies on, in
 # the same shape as the project_clauses table. Output mirrors
