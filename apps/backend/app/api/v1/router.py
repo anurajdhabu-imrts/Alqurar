@@ -1,6 +1,6 @@
 from fastapi import APIRouter
 
-from app.api.v1 import auth, users, roles, permissions, documents, assignments, clauses, projects, project_documents, project_clauses, project_queries, client_profiles, delay_events, chronology, admissibility, portal, proposals, client_proposals, dashboard, knowledge, employees, costing
+from app.api.v1 import auth, users, roles, permissions, documents, assignments, clauses, projects, project_documents, project_clauses, project_queries, proposal_checklist, methodology, client_profiles, delay_events, chronology, admissibility, portal, proposals, client_proposals, dashboard, knowledge, employees, costing
 
 api_router = APIRouter()
 
@@ -15,6 +15,8 @@ api_router.include_router(projects.router, prefix="/projects", tags=["projects"]
 api_router.include_router(project_clauses.router, prefix="/projects", tags=["project-clauses"])
 api_router.include_router(project_documents.router, prefix="/project-documents", tags=["project-documents"])
 api_router.include_router(project_queries.router, prefix="/project-queries", tags=["project-queries"])
+api_router.include_router(proposal_checklist.router, prefix="/proposal-checklist", tags=["proposal-checklist"])
+api_router.include_router(methodology.router, prefix="/methodology", tags=["methodology"])
 api_router.include_router(client_profiles.router, prefix="/client-profiles", tags=["client-profiles"])
 api_router.include_router(delay_events.router, prefix="/delay-events", tags=["delay-events"])
 api_router.include_router(chronology.router, prefix="/chronology", tags=["chronology"])
