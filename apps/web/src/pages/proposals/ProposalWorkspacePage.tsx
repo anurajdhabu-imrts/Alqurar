@@ -1,11 +1,13 @@
 import { useMemo, useState } from "react";
 import { Link, useParams } from "react-router-dom";
-import { ArrowLeft, Building2, Calculator, FileSignature, ListChecks, Loader2, Paperclip, Sparkles } from "lucide-react";
+import { ArrowLeft, Building2, Calculator, ClipboardCheck, FileSignature, ListChecks, Loader2, Paperclip, Route, Sparkles } from "lucide-react";
 import { Card, CardHeader } from "@/components/ui/Card";
 import { Tabs } from "@/components/ui/Tabs";
 import { DocumentsPanel } from "@/components/DocumentsPanel";
 import { UploadedDocsList } from "@/components/client/UploadedDocsList";
 import { ProposalDelayEventsTab } from "@/components/proposals/ProposalDelayEventsTab";
+import { ProposalChecklistTab } from "@/components/proposals/ProposalChecklistTab";
+import { ProposalMethodologyTab } from "@/components/proposals/ProposalMethodologyTab";
 import { ProposalCostSheetTab } from "@/components/proposals/ProposalCostSheetTab";
 import { ProposalCostingTab } from "@/components/proposals/ProposalCostingTab";
 import { useProjectDocuments, useCreateProjectDoc, useAnalyzePendingDocs } from "@/hooks/useProjectDocuments";
@@ -101,9 +103,11 @@ export function ProposalWorkspacePage() {
         onChange={setTab}
         tabs={[
           { id: "documents", label: "1 · Documents", icon: Paperclip, count: docs.length },
-          { id: "events", label: "2 · Delay Events", icon: ListChecks },
-          { id: "costing", label: "3 · Costing", icon: Calculator },
-          { id: "proposal", label: "4 · Proposal", icon: FileSignature },
+          { id: "checklist", label: "2 · Checklist", icon: ClipboardCheck },
+          { id: "methodology", label: "3 · Methodology", icon: Route },
+          { id: "events", label: "4 · Delay Events", icon: ListChecks },
+          { id: "costing", label: "5 · Costing", icon: Calculator },
+          { id: "proposal", label: "6 · Proposal", icon: FileSignature },
         ]}
       />
 
@@ -150,13 +154,19 @@ export function ProposalWorkspacePage() {
           </div>
         )}
 
-        {/* ── 2 · Delay Events ── */}
+        {/* ── 2 · Checklist (EOT standard-documentation checklist; standalone) ── */}
+        {tab === "checklist" && <ProposalChecklistTab proposalId={id} />}
+
+        {/* ── 3 · Methodology & Approach (delay-analysis method selection model) ── */}
+        {tab === "methodology" && <ProposalMethodologyTab proposalId={id} />}
+
+        {/* ── 4 · Delay Events ── */}
         {tab === "events" && <ProposalDelayEventsTab proposalId={id} />}
 
-        {/* ── 3 · Costing (employee-hours costing sheet; standalone) ── */}
+        {/* ── 5 · Costing (employee-hours costing sheet; standalone) ── */}
         {tab === "costing" && <ProposalCostSheetTab proposalId={id} />}
 
-        {/* ── 4 · Proposal (existing AI proposal generation — unchanged) ── */}
+        {/* ── 6 · Proposal (existing AI proposal generation — unchanged) ── */}
         {tab === "proposal" && <ProposalCostingTab proposalId={id} />}
       </div>
     </>

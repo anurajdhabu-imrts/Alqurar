@@ -609,6 +609,73 @@ class CostingSettings(Base):
         return {f: getattr(self, f) for f in self._FIELDS}
 
 
+class ProposalChecklist(Base):
+    """The EOT-documentation checklist for a proposal (Proposals → Checklist tab).
+
+    One row per proposal. The 27 checklist items themselves are canonical and live
+    in the service (proposal_checklist_service.CANONICAL_ITEMS); this row stores only
+    the editable state per item — the status (Yes / No / N/A), the date the
+    information was provided, and any remarks — as one JSON list keyed by item `no`:
+
+        [{"no": 1, "status": "no", "date": "2025-09-14", "remarks": "..."}, ...]
+
+    Filled collaboratively by the client and the analyst; plain data storage, no AI.
+    """
+
+    __tablename__ = "proposal_checklists"
+
+    projectId: Mapped[str] = mapped_column(String, primary_key=True)
+    items: Mapped[list] = mapped_column(JSON, default=list)
+    updatedAt: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+
+    def to_dict(self) -> dict:
+        return {
+            "projectId": self.projectId,
+            "items": self.items or [],
+            "updatedAt": self.updatedAt,
+        }
+
+
+class MethodologyAssessment(Base):
+    """The delay-analysis method-selection model for a proposal (Proposals →
+    Methodology & Approach tab). One row per proposal.
+
+    Either the analyst already knows the method (knowMethodology = True →
+    manualSelection holds one of the 4 method ids), or the weighted scoring model
+    recommends one (knowMethodology = False). The 17 factors, their fixed
+    per-method Requirements and their weights are canonical and live in the service
+    (methodology_service); this row stores only the editable state:
+
+      * availability — factorNo → recordIndex → methodId → "yes"/"no"/"" for the
+        10 detailed factors (the yellow "Availability / Applicable / Suitable /
+        Purpose" cells).
+      * directScores — factorNo → methodId → "yes"/"no" for the 7 factors that have
+        no sub-table (a single Yes/No per method instead of a records checklist).
+
+    Plain data storage; the suitability / final / total scores and the recommended
+    method are computed from this state (see methodology_service.compute_summary).
+    """
+
+    __tablename__ = "methodology_assessments"
+
+    projectId: Mapped[str] = mapped_column(String, primary_key=True)
+    knowMethodology: Mapped[bool] = mapped_column(Boolean, default=False)
+    manualSelection: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+    availability: Mapped[dict] = mapped_column(JSON, default=dict)
+    directScores: Mapped[dict] = mapped_column(JSON, default=dict)
+    updatedAt: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+
+    def to_dict(self) -> dict:
+        return {
+            "projectId": self.projectId,
+            "knowMethodology": bool(self.knowMethodology),
+            "manualSelection": self.manualSelection,
+            "availability": self.availability or {},
+            "directScores": self.directScores or {},
+            "updatedAt": self.updatedAt,
+        }
+
+
 class PortalOTP(Base):
     """The active one-time code for a client portal link (one row per link).
     The code itself is stored hashed; rows expire and are deleted on use."""
