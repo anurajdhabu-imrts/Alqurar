@@ -63,7 +63,7 @@ function ClientProposalCard({ proposal }: { proposal: ProjectDetails }) {
           Download Proposal
         </button>
       </div>
-      <ProposalDocumentView content={content} clientLogo={data?.inputs?.logo} updatedAt={data?.updatedAt} model={data?.model} />
+      <ProposalDocumentView content={content} clientLogo={data?.inputs?.logo} />
     </Card>
   );
 }

@@ -99,6 +99,11 @@ class Project(Base):
     # ("proposal"). Proposals reuse the same documents / delay-event pipeline but
     # live in their own Proposals area, not the Projects list.
     kind: Mapped[str] = mapped_column(String, default="project")
+    # For proposals (kind="proposal"): the service line this proposal is for —
+    # one of "claims_support" | "quantum_expert" | "eot_claims" |
+    # "arbitration_expert" | "quantum_claims". Drives the costing defaults and the
+    # generated proposal template. Empty for ordinary projects.
+    proposalType: Mapped[str] = mapped_column(String, default="")
     # The Knowledge-Center contract book chosen as this project's base clause set
     # (its clauses are copied into the project's Clause Library). Null until picked.
     clauseBookId: Mapped[Optional[str]] = mapped_column(String, nullable=True)
@@ -107,7 +112,7 @@ class Project(Base):
         "id", "name", "code", "employer", "contractor", "standard", "value", "currency",
         "startDate", "completionDate", "status", "riskLevel", "source", "location", "engineer",
         "loaRef", "commencementDate", "timeForCompletionDays", "dataDate", "baselineProgramme", "createdAt",
-        "kind", "clauseBookId",
+        "kind", "proposalType", "clauseBookId",
     )
 
     def to_dict(self) -> dict:

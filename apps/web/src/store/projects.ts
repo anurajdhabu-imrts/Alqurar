@@ -29,6 +29,9 @@ export interface ProjectDetails extends Project {
   /** "project" (default) or "proposal" — proposals live in the Proposals area
    *  but reuse the same documents / delay-event pipeline. */
   kind?: "project" | "proposal";
+  /** For proposals: the service line (drives costing defaults + proposal
+   *  template). See lib/proposalTypes.ts. Empty for ordinary projects. */
+  proposalType?: string;
 }
 
 export const projectsKey = ["projects"] as const;

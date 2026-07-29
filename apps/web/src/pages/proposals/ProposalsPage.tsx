@@ -1,6 +1,6 @@
 import { useMemo, useState, type MouseEvent } from "react";
 import { Link, useNavigate } from "react-router-dom";
-import { ArrowRight, Building2, Check, CheckCircle2, FileSignature, Loader2, Plus, Search, Send, Trash2, UserPlus, Users, X } from "lucide-react";
+import { ArrowRight, Building2, Check, CheckCircle2, FileSignature, Loader2, Pencil, Plus, Search, Send, Trash2, UserPlus, Users, X } from "lucide-react";
 import { Card } from "@/components/ui/Card";
 import { ConfirmDialog } from "@/components/ui/ConfirmDialog";
 import { PageHeader } from "@/components/ui/PageHeader";
@@ -45,6 +45,7 @@ function ProposalCard({
   onOpen,
   onOpenProject,
   onAssign,
+  onEdit,
   onDelete,
 }: {
   proposal: ProjectDetails;
@@ -57,6 +58,7 @@ function ProposalCard({
   onOpen: () => void;
   onOpenProject: () => void;
   onAssign: () => void;
+  onEdit: () => void;
   onDelete: () => void;
 }) {
   const { data: clientIds } = useProjectClients(proposal.id);
@@ -84,14 +86,24 @@ function ProposalCard({
         <span className="size-10 rounded-xl bg-linear-to-br from-navy-700 to-navy-900 text-amber-400 grid place-items-center font-bold shrink-0">
           <FileSignature className="size-5" />
         </span>
-        <button
-          className="btn btn-ghost px-1.5 h-7 text-error hover:bg-error-bg"
-          onClick={stop(onDelete)}
-          title="Delete proposal"
-          aria-label="Delete proposal"
-        >
-          <Trash2 className="size-3.5" />
-        </button>
+        <div className="flex items-center gap-0.5">
+          <button
+            className="btn btn-ghost px-1.5 h-7 text-muted hover:text-navy-700 hover:bg-navy-50"
+            onClick={stop(onEdit)}
+            title="Edit proposal"
+            aria-label="Edit proposal"
+          >
+            <Pencil className="size-3.5" />
+          </button>
+          <button
+            className="btn btn-ghost px-1.5 h-7 text-error hover:bg-error-bg"
+            onClick={stop(onDelete)}
+            title="Delete proposal"
+            aria-label="Delete proposal"
+          >
+            <Trash2 className="size-3.5" />
+          </button>
+        </div>
       </div>
       <h3 className="mt-3 font-semibold text-ink leading-snug">{proposal.name}</h3>
       <p className="text-xs text-muted mt-0.5">{proposal.code}{proposal.standard ? ` · ${proposal.standard}` : ""}</p>
@@ -359,6 +371,7 @@ export function ProposalsPage() {
               onOpen={() => navigate(`/proposals/${p.id}`)}
               onOpenProject={() => conversions[p.id] && navigate(`/projects/${conversions[p.id]}`)}
               onAssign={() => setAssignTarget(p)}
+              onEdit={() => navigate(`/proposals/${p.id}/edit`)}
               onDelete={() => setDeleteTarget(p)}
             />
           ))}

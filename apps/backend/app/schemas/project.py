@@ -31,6 +31,10 @@ class ProjectIn(BaseModel):
     createdAt: Optional[str] = None
     # "project" (default) or "proposal" — proposals live in the Proposals area.
     kind: str = "project"
+    # Service line for a proposal (drives costing defaults + proposal template):
+    # claims_support | quantum_expert | eot_claims | arbitration_expert |
+    # quantum_claims. Empty for ordinary projects.
+    proposalType: str = ""
 
 
 class ProjectOut(ProjectIn):
