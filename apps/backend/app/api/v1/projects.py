@@ -43,7 +43,24 @@ async def get_one(project_id: str, _=Depends(get_current_user)):
 async def post_project(body: ProjectIn, current_user=Depends(get_current_user)):
     if current_user.get("role") == "Client View":
         raise HTTPException(status_code=403, detail="Clients cannot create projects.")
-    return create_project(body.model_dump())
+    created = create_project(body.model_dump())
+    # A new proposal auto-seeds its Cost Sheet with the standard work packages for
+    # the chosen service line (proposalType); the analyst then prices them freely.
+    if created.get("kind") == "proposal" and created.get("proposalType"):
+        _seed_proposal_costing(created["id"], created["proposalType"])
+    return created
+
+
+def _seed_proposal_costing(project_id: str, proposal_type: str) -> None:
+    """Pre-fill an empty Cost Sheet with the proposal type's default activities."""
+    from app.services import costing_service, proposal_templates
+
+    sheet = costing_service.get_sheet(project_id)
+    if sheet.get("activities"):
+        return  # already has a sheet — never clobber
+    activities = [{"description": name, "entries": []} for name in proposal_templates.costing_activities(proposal_type)]
+    if activities:
+        costing_service.replace_sheet(project_id, activities, costing_service._DEFAULTS)
 
 
 @router.post("/{project_id}/convert", response_model=ProjectOut, status_code=status.HTTP_201_CREATED)

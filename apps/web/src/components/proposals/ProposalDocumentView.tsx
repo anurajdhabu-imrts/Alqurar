@@ -1,6 +1,5 @@
-import { Sparkles } from "lucide-react";
 import type { ClientProposal } from "@/api/clientProposals";
-import { formatCurrencyFull, formatDate } from "@/lib/utils";
+import { formatCurrencyFull } from "@/lib/utils";
 import { displayDescription, rowNumbers } from "@/lib/proposalCosting";
 
 type Content = NonNullable<ClientProposal["content"]>;
@@ -13,16 +12,9 @@ type Content = NonNullable<ClientProposal["content"]>;
 export function ProposalDocumentView({
   content,
   clientLogo,
-  updatedAt,
-  model,
-  draft = false,
 }: {
   content: Content;
   clientLogo?: string;
-  updatedAt?: string | null;
-  model?: string | null;
-  /** Internal (staff) view — flags the proposal as an unreviewed AI draft. */
-  draft?: boolean;
 }) {
   const showTimeline = content.costing.some((c) => c.timeline?.trim());
   const totalCols = showTimeline ? 4 : 3;
@@ -39,12 +31,7 @@ export function ProposalDocumentView({
           )}
           <img src="/Al Qarar Logo.png" alt="Al Qarar" className="h-11 object-contain" />
         </div>
-        <p className="text-[11px] uppercase tracking-wide text-faint inline-flex items-center gap-1.5">
-          <Sparkles className={`size-3.5 ${draft ? "text-amber-500" : "text-emerald-500"}`} />
-          {draft ? "AI-generated draft" : "Proposal"}
-          {updatedAt ? ` · ${formatDate(updatedAt)}` : ""}
-        </p>
-        <h1 className="mt-2 text-xl font-bold text-ink leading-snug">{content.title}</h1>
+        <h1 className="text-xl font-bold text-ink leading-snug">{content.title}</h1>
         {(content.reference || content.date) && (
           <p className="mt-1 text-xs text-muted">
             {[content.reference, content.date].filter(Boolean).join(" · ")}
@@ -124,15 +111,9 @@ export function ProposalDocumentView({
         </section>
       )}
 
-      {draft ? (
-        <p className="mt-8 pt-4 border-t border-border text-[11px] text-faint">
-          AI-generated draft{model ? ` · ${model}` : ""}. Review and verify the scope and figures before issuing to the client.
-        </p>
-      ) : model ? (
-        <p className="mt-8 pt-4 border-t border-border text-[11px] text-faint">
-          Prepared by Al Qarar Management Solutions.
-        </p>
-      ) : null}
+      <p className="mt-8 pt-4 border-t border-border text-[11px] text-faint">
+        Prepared by Al Qarar Management Solutions.
+      </p>
     </article>
   );
 }

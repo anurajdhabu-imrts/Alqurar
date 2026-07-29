@@ -1416,8 +1416,11 @@ async def generate_client_proposal(
      costing:[{item, description, timeline, amount}], currency, total,
      paymentTerms:[...]}. `inputs` holds admin-entered fields that override
      the AI's defaults (client address, attention, reference, date, discount, …)."""
+    from app.services import proposal_templates
+
     p = project or {}
     inputs = inputs or {}
+    ptype = str(p.get("proposalType") or "")
     currency = inputs.get("currency") or p.get("currency") or "OMR"
     today = str(inputs.get("date") or "").strip() or datetime.now(timezone.utc).strftime("%d %B %Y")
     header = [
@@ -1438,14 +1441,17 @@ async def generate_client_proposal(
         if admin
         else ""
     )
+    # The system prompt + closing directive are built for the proposal's service
+    # line (Claims Support, Quantum Expert, EOT, Delay/Arbitration Expert, Quantum
+    # Claims) so the title, scope, approach, methodology and commercial framing match.
+    system_prompt = proposal_templates.build_system_prompt(ptype, _AQMS_PROFILE)
     user_content = (
         "PROPOSAL DETAILS\n" + "\n".join(header)
         + admin_section
-        + "\n\nDELAY EVENTS IDENTIFIED BY AI (build the proposal around these)\n"
+        + "\n\nDELAY EVENTS IDENTIFIED BY AI (context for the proposal)\n"
         + _events_brief(events)
         + "\n\nSUPPORTING DOCUMENTS\n" + docs
-        + f"\n\nDraft the AQMS Claims Support Services proposal now. Price all amounts "
-        f"in {currency} and date it {today}."
+        + proposal_templates.user_directive(ptype, currency, today)
     )
 
     async with _client().messages.stream(
@@ -1453,7 +1459,7 @@ async def generate_client_proposal(
         max_tokens=16000,
         thinking={"type": "adaptive"},
         system=[
-            {"type": "text", "text": _PROPOSAL_SYSTEM_PROMPT, "cache_control": {"type": "ephemeral"}}
+            {"type": "text", "text": system_prompt, "cache_control": {"type": "ephemeral"}}
         ],
         messages=[{"role": "user", "content": user_content}],
         output_config={

@@ -99,6 +99,7 @@ export default function App() {
               <Route path="/projects/:id" element={<ProjectWorkspacePage />} />
               <Route path="/proposals" element={<ProposalsPage />} />
               <Route path="/proposals/new" element={<NewProposalPage />} />
+              <Route path="/proposals/:id/edit" element={<NewProposalPage />} />
               <Route path="/proposals/:id" element={<ProposalWorkspacePage />} />
               <Route
                 path="/documents/:docId"

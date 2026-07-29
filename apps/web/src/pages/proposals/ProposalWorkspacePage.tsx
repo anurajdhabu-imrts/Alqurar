@@ -1,6 +1,6 @@
 import { useMemo, useState } from "react";
 import { Link, useParams } from "react-router-dom";
-import { ArrowLeft, Building2, Calculator, ClipboardCheck, FileSignature, ListChecks, Loader2, Paperclip, Route, Sparkles } from "lucide-react";
+import { ArrowLeft, Building2, Calculator, ClipboardCheck, FileSignature, ListChecks, Loader2, Paperclip, Route, Sparkles, Tag } from "lucide-react";
 import { Card, CardHeader } from "@/components/ui/Card";
 import { Tabs } from "@/components/ui/Tabs";
 import { DocumentsPanel } from "@/components/DocumentsPanel";
@@ -16,6 +16,7 @@ import { useUsersQuery } from "@/hooks/useUsers";
 import { useClientProfiles } from "@/store/clientProfiles";
 import { useProjectById, useProjectsQuery } from "@/store/projects";
 import { useAuthStore } from "@/store/authStore";
+import { proposalTypeLabel } from "@/lib/proposalTypes";
 
 /**
  * Proposal workspace — the 3-step flow for a single proposal:
@@ -84,7 +85,14 @@ export function ProposalWorkspacePage() {
 
       {/* Header */}
       <div className="mb-5">
-        <h1 className="text-[26px] leading-tight font-bold text-ink tracking-tight">{proposal.name}</h1>
+        <div className="flex flex-wrap items-center gap-2">
+          <h1 className="text-[26px] leading-tight font-bold text-ink tracking-tight">{proposal.name}</h1>
+          {proposalTypeLabel(proposal.proposalType) && (
+            <span className="inline-flex items-center gap-1 rounded-full bg-navy-100 text-navy-800 text-xs font-semibold px-2.5 py-1">
+              <Tag className="size-3" /> {proposalTypeLabel(proposal.proposalType)}
+            </span>
+          )}
+        </div>
         <p className="text-sm text-faint mt-1">
           {proposal.code}
           {proposal.standard ? ` · ${proposal.standard}` : ""}

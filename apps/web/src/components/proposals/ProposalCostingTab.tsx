@@ -25,6 +25,7 @@ import type { ProposalInputs, ProposalLineItem } from "@/api/clientProposals";
 import type { ProjectDelayEvent } from "@/types";
 import { formatCurrencyFull } from "@/lib/utils";
 import { DELAY_GROUP_DESC, DELAY_GROUP_ITEM, rowNumbers } from "@/lib/proposalCosting";
+import { feeLineItems, isDelayDriven, proposalSubject } from "@/lib/proposalTemplates";
 
 const TODAY = new Date().toISOString().slice(0, 10);
 const CURRENCIES = ["OMR", "AED", "USD", "SAR", "QAR", "KWD", "BHD"];
@@ -80,11 +81,26 @@ function eventsToLines(events: ProjectDelayEvent[]): ProposalLineItem[] {
 const FIXED_ITEMS = [ANCHOR_FIRST.item, ANCHOR_LAST.item, DELAY_GROUP.item, COSTING_LINE.item];
 
 /**
- * Build the full line-items list: anchor-first, the Delay Analysis group header with
- * one sub-line per delay event, the Costing line (point 3), any custom lines, then
- * anchor-last.
+ * Build the full line-items list. Delay-driven service lines (Claims Support, EOT,
+ * Delay Expert) use anchor-first, the Delay Analysis group with one sub-line per
+ * delay event, the Costing line, custom lines, then anchor-last. Cost-driven lines
+ * (Quantum Expert, Quantum Claims) use a fixed fee skeleton + the Costing line.
  */
-function buildLineItems(saved: ProposalLineItem[] | undefined, events: ProjectDelayEvent[]): ProposalLineItem[] {
+function buildLineItems(saved: ProposalLineItem[] | undefined, events: ProjectDelayEvent[], ptype?: string): ProposalLineItem[] {
+  if (!isDelayDriven(ptype)) {
+    const feeItems = feeLineItems(ptype);
+    if (saved?.length) {
+      // Preserve saved fee lines (matched by item) + custom extras; keep the Costing line.
+      const costing = saved.find((l) => l.item === COSTING_LINE.item) ?? { ...COSTING_LINE };
+      const feeNames = new Set(feeItems.map((f) => f.item));
+      const feeLines = feeItems.map((f) => saved.find((l) => l.item === f.item) ?? { ...f });
+      const extras = saved.filter(
+        (l) => !feeNames.has(l.item) && l.item !== COSTING_LINE.item && !l.group && !l.sub,
+      );
+      return [...feeLines, { ...costing, costing: true }, ...extras];
+    }
+    return [...feeItems, { ...COSTING_LINE }];
+  }
   if (saved?.length) {
     // Ensure the anchors, group header and Costing line exist; preserve saved content.
     const first = saved.find((l) => l.item === ANCHOR_FIRST.item) ?? { ...ANCHOR_FIRST };
@@ -101,22 +117,23 @@ function buildLineItems(saved: ProposalLineItem[] | undefined, events: ProjectDe
   return [{ ...ANCHOR_FIRST }, { ...DELAY_GROUP }, ...eventLines, { ...COSTING_LINE }, { ...ANCHOR_LAST }];
 }
 
-/** Build the form state from stored inputs, seeding prices from the delay events. */
-function buildForm(inp: ProposalInputs, employer: string | undefined, projectCurrency: string, events: ProjectDelayEvent[]): ProposalInputs {
+/** Build the form state from stored inputs, seeding prices from the delay events.
+ *  The subject and default line items follow the proposal's service line (ptype). */
+function buildForm(inp: ProposalInputs, employer: string | undefined, projectCurrency: string, events: ProjectDelayEvent[], ptype?: string): ProposalInputs {
   return {
     reference: inp.reference ?? "",
     date: inp.date ?? TODAY,
     clientCompany: inp.clientCompany ?? employer ?? "",
     attention: inp.attention ?? "",
     clientAddress: inp.clientAddress ?? "",
-    subject: inp.subject ?? "Proposal for Claims Support Services",
+    subject: inp.subject ?? proposalSubject(ptype),
     signatory: inp.signatory ?? "Hemanth Sarvabhotla, Director",
     discount: inp.discount ?? "",
     feeBasis: inp.feeBasis ?? "",
     notes: inp.notes ?? "",
     logo: inp.logo ?? "",
     currency: inp.currency ?? projectCurrency,
-    lineItems: buildLineItems(inp.lineItems, events),
+    lineItems: buildLineItems(inp.lineItems, events, ptype),
   };
 }
 
@@ -164,6 +181,8 @@ export function ProposalCostingTab({ proposalId }: { proposalId: string }) {
   const failed = proposal?.status === "failed";
   const doc = proposal?.content ?? null;
   const projectCurrency = record?.currency ?? "OMR";
+  const ptype = record?.proposalType;
+  const delayDriven = isDelayDriven(ptype);
 
   const [form, setForm] = useState<ProposalInputs>({});
   const [editing, setEditing] = useState(false);
@@ -174,7 +193,7 @@ export function ProposalCostingTab({ proposalId }: { proposalId: string }) {
   const seedReady = !!proposal && (!!proposal.inputs?.lineItems?.length || !eventsLoading);
   if (seedReady && seededFor !== proposalId) {
     setSeededFor(proposalId);
-    setForm(buildForm(proposal!.inputs ?? {}, record?.employer, projectCurrency, events));
+    setForm(buildForm(proposal!.inputs ?? {}, record?.employer, projectCurrency, events, ptype));
   }
 
   const currency = form.currency ?? projectCurrency;
@@ -279,11 +298,11 @@ export function ProposalCostingTab({ proposalId }: { proposalId: string }) {
   }
 
   function startEdit() {
-    setForm(buildForm(proposal?.inputs ?? {}, record?.employer, projectCurrency, events));
+    setForm(buildForm(proposal?.inputs ?? {}, record?.employer, projectCurrency, events, ptype));
     setEditing(true);
   }
   function cancelEdit() {
-    setForm(buildForm(proposal?.inputs ?? {}, record?.employer, projectCurrency, events));
+    setForm(buildForm(proposal?.inputs ?? {}, record?.employer, projectCurrency, events, ptype));
     setEditing(false);
   }
 
@@ -392,11 +411,11 @@ export function ProposalCostingTab({ proposalId }: { proposalId: string }) {
             <div>
               <div className="flex items-center justify-between mb-2">
                 <div>
-                  <p className="label mb-0">Prices — identified delay events</p>
-                  <p className="text-xs text-faint mt-0.5">Enter a price for each line. The Costing line (point 3) is priced automatically from the Costing tab.</p>
+                  <p className="label mb-0">{delayDriven ? "Prices — identified delay events" : "Prices — fee line items"}</p>
+                  <p className="text-xs text-faint mt-0.5">Enter a price for each line. The Costing line is priced automatically from the Costing tab.</p>
                 </div>
                 <div className="flex items-center gap-2">
-                  {events.length > 0 && (
+                  {delayDriven && events.length > 0 && (
                     <button className="btn btn-ghost btn-sm" onClick={reloadFromEvents} title="Reload the list from the current delay events">
                       <Sparkles className="size-3.5" /> Reload events
                     </button>
@@ -571,13 +590,7 @@ export function ProposalCostingTab({ proposalId }: { proposalId: string }) {
         </Card>
       ) : doc ? (
         <Card className="p-0 overflow-hidden">
-          <ProposalDocumentView
-            draft
-            content={doc}
-            clientLogo={proposal?.inputs?.logo}
-            updatedAt={proposal?.updatedAt}
-            model={proposal?.model}
-          />
+          <ProposalDocumentView content={doc} clientLogo={proposal?.inputs?.logo} />
         </Card>
       ) : null}
     </div>
