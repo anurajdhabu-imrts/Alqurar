@@ -17,6 +17,8 @@ interface ProjectClauseRow {
   source?: string;
   modified?: boolean;
   modification_note?: string | null;
+  base_description?: string | null;
+  interpretation?: string | null;
   created_by?: string | null;
   created_at?: string | null;
   updated_at?: string | null;
@@ -59,6 +61,8 @@ function toClauseRef(row: ProjectClauseRow): ClauseRef {
     source: row.source ?? "manual",
     modified: row.modified ?? false,
     modificationNote: row.modification_note ?? undefined,
+    baseDescription: row.base_description ?? undefined,
+    interpretation: row.interpretation ?? undefined,
   };
 }
 

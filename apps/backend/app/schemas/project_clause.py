@@ -38,6 +38,11 @@ class ProjectClauseOut(BaseModel):
     # Set when the project's Particular Conditions amend this base clause.
     modified: bool = False
     modification_note: Optional[str] = None
+    # The base standard-form wording, kept when a PCC amendment replaces
+    # `clause_description` with the amended wording (None when unmodified).
+    base_description: Optional[str] = None
+    # What the amendment means in practice for a claim (modified clauses only).
+    interpretation: Optional[str] = None
     created_by: Optional[str] = None
     created_at: Optional[str] = None
     updated_at: Optional[str] = None

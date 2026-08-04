@@ -704,7 +704,17 @@ _CLAUSES_SYSTEM_PROMPT = (
     "- Set 'modified' to true when the Particular Conditions amend, replace or delete "
     "the clause; otherwise false.\n"
     "- 'modification_note' is one concise sentence stating what the Particular "
-    "Conditions change (empty string when 'modified' is false)."
+    "Conditions change (empty string when 'modified' is false).\n"
+    "- 'base_description' is a concise one or two sentence plain-language summary of "
+    "the clause as it stands in the GENERAL Conditions — BEFORE the "
+    "Particular-Conditions amendment. Fill it only when 'modified' is true (empty "
+    "string otherwise); it must describe the unamended base wording, never the "
+    "amendment itself.\n"
+    "- 'interpretation' is one or two sentences on what the amendment MEANS in "
+    "practice for a claim: which party it favours, the risk or obligation it shifts, "
+    "and what the Contractor must now do differently. Explain the practical effect "
+    "rather than restating the amendment. Fill it only when 'modified' is true "
+    "(empty string otherwise)."
 )
 
 _CLAUSE_ITEM_SCHEMA = {
@@ -718,10 +728,15 @@ _CLAUSE_ITEM_SCHEMA = {
         # Set when the document's own Particular Conditions amend this clause.
         "modified": {"type": "boolean"},
         "modification_note": {"type": "string"},
+        # The General-Conditions wording before that amendment, and what the
+        # amendment means for a claim (both modified-only).
+        "base_description": {"type": "string"},
+        "interpretation": {"type": "string"},
     },
     "required": [
         "contract_standard", "clause_number", "clause_title",
         "clause_description", "tags", "modified", "modification_note",
+        "base_description", "interpretation",
     ],
     "additionalProperties": False,
 }
@@ -928,6 +943,12 @@ _PCC_SYSTEM_PROMPT = (
     "- 'new_description' is an updated one-or-two sentence plain-language description "
     "of the clause AS AMENDED — what it now provides once the PCC is read with the "
     "base clause.\n"
+    "- 'interpretation' is one or two sentences on what the amendment MEANS in "
+    "practice for a claim: which party it favours, the risk or obligation it shifts, "
+    "and what the Contractor must now do differently (e.g. 'Tightens the time-bar — "
+    "notice must be served within 21 days, so a late notice now defeats the claim "
+    "outright; diarise the shorter deadline from the date of awareness.'). Explain "
+    "the practical effect; do not merely restate the amendment.\n"
     "Only include base clauses the PCC actually changes. Ignore untouched clauses.\n\n"
     "2) 'additions' — brand-NEW clauses/sub-clauses the PCC introduces that do NOT "
     "correspond to any base clause in the provided list (e.g. a new Sub-Clause the "
@@ -954,8 +975,12 @@ _PCC_ITEM_SCHEMA = {
         "clause_title": {"type": "string"},
         "modification_note": {"type": "string"},
         "new_description": {"type": "string"},
+        "interpretation": {"type": "string"},
     },
-    "required": ["clause_number", "clause_title", "modification_note", "new_description"],
+    "required": [
+        "clause_number", "clause_title", "modification_note", "new_description",
+        "interpretation",
+    ],
     "additionalProperties": False,
 }
 
@@ -1079,6 +1104,114 @@ async def compare_pcc_to_book(
         "modifications": data.get("modifications", []),
         "additions": data.get("additions", []),
     }
+
+
+# ── Interpretation of PCC amendments ────────────────────────────────────────
+# A PCC comparison now writes an 'interpretation' with each modification. This
+# fills that field for clauses amended by an EARLIER comparison (before the field
+# existed) without re-running the whole comparison: everything needed — the base
+# wording, the amendment note and the amended wording — is already stored.
+
+_INTERPRETATION_SYSTEM_PROMPT = (
+    "You are a construction-claims specialist. For each clause you are given the "
+    "base wording from the standard form (General Conditions), what the project's "
+    "Particular Conditions (PCC) change, and the clause as amended.\n\n"
+    "For every clause return an 'interpretation': one or two sentences on what the "
+    "amendment MEANS in practice for an Extension of Time / delay claim — which "
+    "party it favours, the risk or obligation it shifts, and what the Contractor "
+    "must now do differently (e.g. 'Tightens the time-bar — notice must be served "
+    "within 21 days, so a late notice now defeats the claim outright; diarise the "
+    "shorter deadline from the date of awareness.').\n\n"
+    "Rules:\n"
+    "- Explain the practical effect; do NOT merely restate the amendment.\n"
+    "- Return one entry per clause given, echoing 'clause_number' EXACTLY as "
+    "provided, and cover every clause in the input.\n"
+    "- Base it only on the wording provided — do not invent figures or obligations."
+)
+
+_INTERPRETATION_OUTPUT_SCHEMA = {
+    "type": "object",
+    "properties": {
+        "interpretations": {
+            "type": "array",
+            "items": {
+                "type": "object",
+                "properties": {
+                    "clause_number": {"type": "string"},
+                    "interpretation": {"type": "string"},
+                },
+                "required": ["clause_number", "interpretation"],
+                "additionalProperties": False,
+            },
+        }
+    },
+    "required": ["interpretations"],
+    "additionalProperties": False,
+}
+
+
+async def interpret_modifications(
+    *,
+    clauses: list[dict],
+    standard: str | None = None,
+) -> dict[str, str]:
+    """Write the practical interpretation of each amended clause.
+
+    `clauses` each carry clause_number, clause_title, base_description,
+    modification_note and clause_description (the amended wording). Returns
+    {clause_number: interpretation} for the clauses the model covered.
+    """
+    if not clauses:
+        return {}
+
+    blocks = [f"Contract standard: {standard}"] if standard else []
+    for c in clauses:
+        blocks.append(
+            f"\n--- Clause {c.get('clause_number') or ''} — {c.get('clause_title') or ''} ---\n"
+            f"BASE (General Conditions): {(c.get('base_description') or '(not recorded)').strip()}\n"
+            f"PCC AMENDMENT: {(c.get('modification_note') or '(not recorded)').strip()}\n"
+            f"AS AMENDED: {(c.get('clause_description') or '').strip()}"
+        )
+
+    async with _client().messages.stream(
+        model=EXTRACTION_MODEL,
+        # ~1k tokens per clause covers a batch comfortably; thinking is disabled
+        # for the same reason as the comparison it backfills.
+        max_tokens=16000,
+        thinking={"type": "disabled"},
+        system=[
+            {
+                "type": "text",
+                "text": _INTERPRETATION_SYSTEM_PROMPT,
+                "cache_control": {"type": "ephemeral"},
+            }
+        ],
+        messages=[{"role": "user", "content": "\n".join(blocks)}],
+        output_config={
+            "effort": "low",
+            "format": {"type": "json_schema", "schema": _INTERPRETATION_OUTPUT_SCHEMA},
+        },
+    ) as stream:
+        response = await stream.get_final_message()
+
+    payload = "".join(b.text for b in response.content if b.type == "text").strip()
+    if not payload:
+        raise ValueError(
+            "The AI returned no output for the clause interpretations "
+            f"(stop_reason={response.stop_reason})."
+        )
+    try:
+        items = json.loads(payload).get("interpretations", [])
+    except json.JSONDecodeError:
+        raise ValueError("The AI returned a malformed interpretation result.") from None
+
+    out: dict[str, str] = {}
+    for it in items:
+        num = (it.get("clause_number") or "").strip()
+        text_ = (it.get("interpretation") or "").strip()
+        if num and text_:
+            out[num] = text_
+    return out
 
 
 # ── EOT claim document generation ───────────────────────────────────────────

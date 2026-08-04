@@ -318,11 +318,20 @@ class ProjectClause(Base):
     # card then shows a "Modified" tag; `modification_note` says what changed.
     modified: Mapped[bool] = mapped_column(Boolean, default=False)
     modification_note: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    # The General-Conditions (base standard-form) wording, kept when a PCC
+    # amendment overwrites `clause_description` with the amended wording. Lets a
+    # modified clause be shown as base clause → PCC amendment → clause as amended.
+    # NULL on unmodified clauses (the base wording IS `clause_description`).
+    base_description: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    # What the amendment means in practice — which party it favours and how it
+    # changes the claim position. Written by Claude for modified clauses only.
+    interpretation: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
 
     _FIELDS = (
         "id", "projectId", "contract_standard", "clause_number", "clause_title",
         "clause_description", "tags", "created_by", "created_at", "updated_at",
-        "source", "modified", "modification_note",
+        "source", "modified", "modification_note", "base_description",
+        "interpretation",
     )
 
     def to_dict(self) -> dict:
@@ -619,10 +628,14 @@ class ProposalChecklist(Base):
 
     One row per proposal. The 27 checklist items themselves are canonical and live
     in the service (proposal_checklist_service.CANONICAL_ITEMS); this row stores only
-    the editable state per item — the status (Yes / No / N/A), the date the
-    information was provided, and any remarks — as one JSON list keyed by item `no`:
+    the editable state per item — the status (Yes / No / N/A), any remarks, and the
+    ids of the documents attached to it — as one JSON list keyed by item `no`:
 
-        [{"no": 1, "status": "no", "date": "2025-09-14", "remarks": "..."}, ...]
+        [{"no": 1, "status": "yes", "remarks": "...", "docIds": ["doc-3"]}, ...]
+
+    Rows numbered 28+ are user-added "additional document" rows and carry their own
+    `item` label. Attached files are ordinary project documents (they also appear in
+    the proposal's Documents tab); only their ids are referenced here.
 
     Filled collaboratively by the client and the analyst; plain data storage, no AI.
     """

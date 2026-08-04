@@ -520,4 +520,12 @@ export interface ClauseRef {
   modified?: boolean;
   /** One-line note on what the Particular Conditions changed. */
   modificationNote?: string;
+  /**
+   * The base standard-form (General Conditions) wording, kept when the PCC
+   * amendment replaced `summary` with the amended wording. Present only on
+   * modified clauses, so a card can read: base clause → PCC amendment → as amended.
+   */
+  baseDescription?: string;
+  /** What the amendment means in practice for a claim (modified clauses only). */
+  interpretation?: string;
 }

@@ -1,20 +1,33 @@
 """Proposal EOT-documentation checklist store + canonical item list.
 
 One checklist per proposal = a single ProposalChecklist row (projectId PK) holding
-the editable state (status / date / remarks) for each of the 27 standard items. The
-27 items themselves are CANONICAL and defined here, so the item wording is owned by
-the backend and never drifts per proposal. The row stores only state, keyed by item
-`no`; get_checklist merges that state with the canonical text for the API.
+the editable state (status / remarks) and the attached files for each item. The 27
+standard items themselves are CANONICAL and defined here, so the item wording is
+owned by the backend and never drifts per proposal. The row stores only state,
+keyed by item `no`; get_checklist merges that state with the canonical text.
 
-Read and replaced as one document (get_checklist / replace_checklist), mirroring the
-sibling costing sheet. Filled collaboratively by the client and the analyst — plain
-data storage, no AI, no hard-coded sample state.
+Items 1-26 are the fixed standard documents, canonically worded. Item 27 ("Any
+additional documents…") is where anything extra goes: the user gives it a name and
+a file, and once it is named or filled each further additional document gets its
+own row — 28, 29, … — with its own name. Rows 27+ therefore carry a user-supplied
+`item` label in the same JSON list.
+
+Attached files are NOT stored here: a file is uploaded through the ordinary project
+-document pipeline (so it shows up in the proposal's Documents tab and can be
+analysed like any other), and the checklist simply keeps the document ids. Deleting
+a document elsewhere therefore just drops it off the checklist.
+
+The status/remarks state is read and replaced as one document (get_checklist /
+replace_checklist), mirroring the sibling costing sheet, while file attach/detach
+are immediate single-item operations. Filled collaboratively by the client and the
+analyst — plain data storage, no AI, no hard-coded sample state.
 """
 from datetime import datetime, timezone
-from typing import Dict, List
+from typing import Dict, List, Optional, Tuple
 
 from app.db import SessionLocal
 from app.models import ProposalChecklist
+from app.services.document_service import get_documents_meta
 
 # ── The 27 standard EOT-claim documentation items (verbatim from the business's
 #    "EOT claims related Standard Documentation Check List"). Order = serial no. ──
@@ -48,84 +61,255 @@ CANONICAL_ITEMS: List[Dict] = [
     {"no": 27, "item": "Any additional documents if deemed necessary."},
 ]
 
+_CANONICAL_NOS = {c["no"] for c in CANONICAL_ITEMS}
+_CANONICAL_TEXT = {c["no"]: c["item"] for c in CANONICAL_ITEMS}
+
+#: The "Any additional documents" row — the first extra document lands here.
+ADDITIONAL_ITEM_NO = 27
+#: Every further additional document gets its own row, numbered from here up.
+EXTRA_ITEM_START = 28
+
 _VALID_STATUS = {"yes", "no", "na", ""}
+_DEFAULT_EXTRA_TEXT = "Additional document"
 
 
 def _now() -> str:
     return datetime.now(timezone.utc).isoformat()
 
 
-def _blank_state() -> Dict:
-    return {"status": "", "date": "", "remarks": ""}
-
-
-def get_checklist(project_id: str) -> Dict:
-    """The proposal's full checklist: every canonical item merged with any saved
-    state. Returns all 27 items even when nothing has been saved yet."""
+def _load(project_id: str) -> Tuple[List[Dict], Optional[str]]:
+    """The raw stored state rows (mutable copies) + the last-saved timestamp."""
     with SessionLocal() as db:
         row = db.get(ProposalChecklist, project_id)
-        saved = row.items if row and row.items else []
-        updated_at = row.updatedAt if row else None
-
-    by_no: Dict[int, Dict] = {}
-    for s in saved:
-        try:
-            by_no[int(s.get("no"))] = s
-        except (TypeError, ValueError):
-            continue
-
-    items: List[Dict] = []
-    for c in CANONICAL_ITEMS:
-        state = by_no.get(c["no"], {})
-        status = state.get("status", "")
-        if status not in _VALID_STATUS:
-            status = ""
-        items.append({
-            "no": c["no"],
-            "item": c["item"],
-            "status": status,
-            "date": (state.get("date") or ""),
-            "remarks": (state.get("remarks") or ""),
-        })
-
-    return {"projectId": project_id, "items": items, "updatedAt": updated_at}
+        if not row:
+            return [], None
+        return [dict(s) for s in (row.items or []) if isinstance(s, dict)], row.updatedAt
 
 
-def replace_checklist(project_id: str, items: List[Dict]) -> Dict:
-    """Replace the proposal's whole checklist state in one transaction. Only the
-    editable state (status / date / remarks) is stored, keyed by item `no`; the
-    item text is never trusted from the client — it is re-merged from CANONICAL_ITEMS
-    on read."""
-    valid_nos = {c["no"] for c in CANONICAL_ITEMS}
-    clean: List[Dict] = []
-    for s in items:
-        try:
-            no = int(s.get("no"))
-        except (TypeError, ValueError):
-            continue
-        if no not in valid_nos:
-            continue
-        status = s.get("status") or ""
-        if status not in _VALID_STATUS:
-            status = ""
-        clean.append({
-            "no": no,
-            "status": status,
-            "date": (s.get("date") or "").strip(),
-            "remarks": (s.get("remarks") or "").strip(),
-        })
-
-    now = _now()
+def _store(project_id: str, states: List[Dict]) -> None:
+    states.sort(key=lambda s: s["no"])
     with SessionLocal() as db:
         row = db.get(ProposalChecklist, project_id)
         if not row:
             row = ProposalChecklist(projectId=project_id)
             db.add(row)
-        row.items = clean
-        row.updatedAt = now
+        row.items = states
+        row.updatedAt = _now()
         db.commit()
 
+
+def _by_no(states: List[Dict]) -> Dict[int, Dict]:
+    """Index the state rows by item number (values are the same dict objects, so
+    mutating one mutates the list)."""
+    out: Dict[int, Dict] = {}
+    for s in states:
+        try:
+            no = int(s.get("no"))
+        except (TypeError, ValueError):
+            continue
+        s["no"] = no
+        out[no] = s
+    return out
+
+
+def _is_extra(no: int) -> bool:
+    """True for the user-added rows beyond the canonical list."""
+    return no >= EXTRA_ITEM_START
+
+
+def _is_nameable(no: int) -> bool:
+    """True for the additional-document rows (27 and up), whose label the user
+    supplies. The 26 standard items keep their canonical wording."""
+    return no >= ADDITIONAL_ITEM_NO
+
+
+def get_checklist(project_id: str) -> Dict:
+    """The proposal's full checklist: every canonical item merged with any saved
+    state and its attached documents, followed by the user-added extra rows.
+    Returns all 27 canonical items even when nothing has been saved yet."""
+    states, updated_at = _load(project_id)
+    by_no = _by_no(states)
+
+    # Resolve every referenced document in one query; ids that no longer exist
+    # (the file was deleted from the data room) drop out here.
+    meta = get_documents_meta([d for s in by_no.values() for d in (s.get("docIds") or [])])
+
+    def row(no: int, text: str, state: Dict) -> Dict:
+        status = state.get("status", "")
+        return {
+            "no": no,
+            "item": text,
+            "status": status if status in _VALID_STATUS else "",
+            "remarks": state.get("remarks") or "",
+            "documents": [meta[d] for d in (state.get("docIds") or []) if d in meta],
+        }
+
+    items = []
+    for c in CANONICAL_ITEMS:
+        state = by_no.get(c["no"], {})
+        # Item 27 onwards is "additional documents" — the user names those, so a
+        # saved label wins over the canonical placeholder text.
+        label = c["item"]
+        if _is_nameable(c["no"]):
+            label = (state.get("item") or "").strip() or label
+        items.append(row(c["no"], label, state))
+
+    for no in sorted(n for n in by_no if _is_extra(n)):
+        state = by_no[no]
+        items.append(row(no, (state.get("item") or "").strip() or _DEFAULT_EXTRA_TEXT, state))
+
+    return {"projectId": project_id, "items": items, "updatedAt": updated_at}
+
+
+def replace_checklist(project_id: str, items: List[Dict]) -> Dict:
+    """Replace the proposal's checklist answers in one transaction. Only the
+    editable state (status / remarks, plus the label of user-added rows) comes from
+    the client; canonical item text and the attached document ids are owned by the
+    server and re-merged here, so a save can never drop someone's uploads."""
+    stored, _ = _load(project_id)
+    existing = _by_no(stored)
+
+    clean: List[Dict] = []
+    seen = set()
+    for s in items:
+        try:
+            no = int(s.get("no"))
+        except (TypeError, ValueError):
+            continue
+        if no in seen:
+            continue
+        # Unknown rows are ignored; an extra row must already exist (add_item).
+        if no not in _CANONICAL_NOS and no not in existing:
+            continue
+        if _is_extra(no) and no not in existing:
+            continue
+        seen.add(no)
+
+        prev = existing.get(no, {})
+        status = s.get("status") or ""
+        entry = {
+            "no": no,
+            "status": status if status in _VALID_STATUS else "",
+            "remarks": (s.get("remarks") or "").strip(),
+            "docIds": list(prev.get("docIds") or []),
+        }
+        if _is_nameable(no):
+            label = (s.get("item") or "").strip() or (prev.get("item") or "").strip()
+            if _is_extra(no):
+                entry["item"] = label or _DEFAULT_EXTRA_TEXT
+            elif label and label != _CANONICAL_TEXT[no]:
+                # Item 27 only stores a label once the user has named it; leaving it
+                # as the canonical wording keeps that wording server-owned.
+                entry["item"] = label
+        clean.append(entry)
+
+    # Rows the payload never mentioned (e.g. an extra added from another tab while
+    # this one was open) are kept as-is rather than silently deleted.
+    for no, prev in existing.items():
+        if no not in seen:
+            clean.append(prev)
+
+    _store(project_id, clean)
     return get_checklist(project_id)
+
+
+def add_item(project_id: str, item_text: str = "") -> Tuple[Dict, int]:
+    """Claim the next additional-document row and return (checklist, its no).
+
+    The canonical "Any additional documents…" row (27) is the first slot, so the
+    first extra document lands there; once it has been named or filled, each
+    further one gets its own row — 28, 29, … — carrying the given name.
+    """
+    states, _ = _load(project_id)
+    by_no = _by_no(states)
+    label = (item_text or "").strip()
+
+    slot = by_no.get(ADDITIONAL_ITEM_NO)
+    if slot is None or not (slot.get("docIds") or (slot.get("item") or "").strip()):
+        if slot is None:
+            slot = {"no": ADDITIONAL_ITEM_NO, "status": "", "remarks": "", "docIds": []}
+            states.append(slot)
+        if label:
+            slot["item"] = label
+        _store(project_id, states)
+        return get_checklist(project_id), ADDITIONAL_ITEM_NO
+
+    highest = max([n for n in by_no if _is_extra(n)] or [EXTRA_ITEM_START - 1])
+    no = max(highest + 1, EXTRA_ITEM_START)
+    states.append({
+        "no": no,
+        "item": label or _DEFAULT_EXTRA_TEXT,
+        "status": "",
+        "remarks": "",
+        "docIds": [],
+    })
+    _store(project_id, states)
+    return get_checklist(project_id), no
+
+
+def remove_item(project_id: str, no: int) -> Optional[Dict]:
+    """Delete a user-added row. Canonical items (1-27) cannot be removed — None is
+    returned for those and for rows that don't exist. The documents that were
+    attached are left untouched in the proposal's data room."""
+    if not _is_extra(no):
+        return None
+    states, _ = _load(project_id)
+    remaining = [s for s in states if s.get("no") != no]
+    if len(remaining) == len(states):
+        return None
+    _store(project_id, remaining)
+    return get_checklist(project_id)
+
+
+def attach_document(project_id: str, no: int, document_id: str, label: str = "") -> Optional[Dict]:
+    """Link an already-uploaded project document to a checklist item. Returns None
+    if the item doesn't exist. Attaching answers the question, so an item that is
+    still unanswered is marked "yes" (available).
+
+    `label` names the row and is only honoured for the additional-document rows
+    (27+) — the 26 standard items keep their canonical wording."""
+    states, _ = _load(project_id)
+    by_no = _by_no(states)
+
+    entry = by_no.get(no)
+    if entry is None:
+        if no not in _CANONICAL_NOS:
+            return None
+        entry = {"no": no, "status": "", "remarks": "", "docIds": []}
+        states.append(entry)
+
+    if label.strip() and _is_nameable(no):
+        entry["item"] = label.strip()
+
+    doc_ids = list(entry.get("docIds") or [])
+    if document_id not in doc_ids:
+        doc_ids.append(document_id)
+    entry["docIds"] = doc_ids
+    if not entry.get("status"):
+        entry["status"] = "yes"
+
+    _store(project_id, states)
+    return get_checklist(project_id)
+
+
+def detach_document(project_id: str, no: int, document_id: str) -> Optional[Dict]:
+    """Unlink a document from a checklist item. The file itself stays in the
+    proposal's Documents tab — only the link is removed."""
+    states, _ = _load(project_id)
+    entry = _by_no(states).get(no)
+    if entry is None:
+        return None
+    entry["docIds"] = [d for d in (entry.get("docIds") or []) if d != document_id]
+    _store(project_id, states)
+    return get_checklist(project_id)
+
+
+def item_exists(project_id: str, no: int) -> bool:
+    """True when `no` is a canonical item or an existing user-added row."""
+    if no in _CANONICAL_NOS:
+        return True
+    states, _ = _load(project_id)
+    return no in _by_no(states)
 
 
 def delete_checklist(project_id: str) -> None:

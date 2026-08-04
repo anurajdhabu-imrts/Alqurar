@@ -20,10 +20,11 @@ import { proposalTypeLabel } from "@/lib/proposalTypes";
 
 /**
  * Proposal workspace — the 3-step flow for a single proposal:
- *   1. Documents   — upload the client's documents; AI analyses each (same as a
+ *   1. Checklist   — the EOT standard-documentation checklist.
+ *   2. Documents   — upload the client's documents; AI analyses each (same as a
  *                    project's data room).
- *   2. Delay Events — AI identifies the delay events from those documents.
- *   3. Proposal    — AI generates the costed client proposal from the events.
+ *   3. Delay Events — AI identifies the delay events from those documents.
+ *   4. Proposal    — AI generates the costed client proposal from the events.
  * A proposal is backed by a project record (kind = "proposal"), so it reuses the
  * exact same document / delay-event pipeline.
  */
@@ -54,7 +55,7 @@ export function ProposalWorkspacePage() {
     [clientIds, users, profiles],
   );
 
-  const [tab, setTab] = useState("documents");
+  const [tab, setTab] = useState("checklist");
 
   if (!proposal) {
     if (projectsLoading) {
@@ -110,8 +111,8 @@ export function ProposalWorkspacePage() {
         active={tab}
         onChange={setTab}
         tabs={[
-          { id: "documents", label: "1 · Documents", icon: Paperclip, count: docs.length },
-          { id: "checklist", label: "2 · Checklist", icon: ClipboardCheck },
+          { id: "checklist", label: "1 · Checklist", icon: ClipboardCheck },
+          { id: "documents", label: "2 · Documents", icon: Paperclip, count: docs.length },
           { id: "methodology", label: "3 · Methodology", icon: Route },
           { id: "events", label: "4 · Delay Events", icon: ListChecks },
           { id: "costing", label: "5 · Costing", icon: Calculator },
@@ -120,7 +121,10 @@ export function ProposalWorkspacePage() {
       />
 
       <div className="pt-5">
-        {/* ── 1 · Documents ── */}
+        {/* ── 1 · Checklist (EOT standard-documentation checklist; standalone) ── */}
+        {tab === "checklist" && <ProposalChecklistTab proposalId={id} />}
+
+        {/* ── 2 · Documents ── */}
         {tab === "documents" && (
           <div className="space-y-4">
             <Card className="p-5">
@@ -161,9 +165,6 @@ export function ProposalWorkspacePage() {
             </Card>
           </div>
         )}
-
-        {/* ── 2 · Checklist (EOT standard-documentation checklist; standalone) ── */}
-        {tab === "checklist" && <ProposalChecklistTab proposalId={id} />}
 
         {/* ── 3 · Methodology & Approach (delay-analysis method selection model) ── */}
         {tab === "methodology" && <ProposalMethodologyTab proposalId={id} />}

@@ -110,6 +110,11 @@ def replace_ai_clauses(project_id: str, clauses: List[Dict], created_by: str = "
                     # can flag clauses the PC amends, same as a PCC comparison.
                     modified=bool(c.get("modified")),
                     modification_note=(c.get("modification_note") or "").strip() or None,
+                    # The General-Conditions wording before the Particular
+                    # Conditions amended it, and what that amendment means for a
+                    # claim (both only returned for modified clauses).
+                    base_description=(c.get("base_description") or "").strip() or None,
+                    interpretation=(c.get("interpretation") or "").strip() or None,
                     created_by=created_by,
                     created_at=now,
                     updated_at=now,
@@ -178,7 +183,13 @@ def set_book_clauses(project_id: str, book: Dict, book_clauses: List[Dict]) -> i
 
 
 def list_book_sourced_clauses(project_id: str) -> List[Dict]:
-    """This project's book-copied clauses (the base set a PCC can amend)."""
+    """This project's book-copied clauses (the base set a PCC can amend).
+
+    `clause_description` is always the ORIGINAL General-Conditions wording: for a
+    clause a previous PCC upload amended, the preserved `base_description` is used.
+    Re-uploading a PCC therefore compares against the base book, never against
+    wording an earlier PCC already amended.
+    """
     with SessionLocal() as db:
         rows = (
             db.query(ProjectClause)
@@ -188,7 +199,58 @@ def list_book_sourced_clauses(project_id: str) -> List[Dict]:
             )
             .all()
         )
+        out = []
+        for c in rows:
+            d = c.to_dict()
+            base = (d.get("base_description") or "").strip()
+            if base:
+                d["clause_description"] = base
+            out.append(d)
+        return out
+
+
+def list_modified_without_interpretation(project_id: str) -> List[Dict]:
+    """Modified clauses still missing their 'what this means in practice' note.
+
+    Non-empty only for clauses amended by a PCC comparison that ran before the
+    interpretation was generated with it — see clause_interpretation.py.
+    """
+    with SessionLocal() as db:
+        rows = (
+            db.query(ProjectClause)
+            .filter(
+                ProjectClause.projectId == project_id,
+                ProjectClause.modified.is_(True),
+                ProjectClause.source != "pcc",
+                (ProjectClause.interpretation.is_(None))
+                | (ProjectClause.interpretation == ""),
+            )
+            .all()
+        )
         return [c.to_dict() for c in rows]
+
+
+def set_interpretations(project_id: str, by_number: Dict[str, str]) -> int:
+    """Store interpretations for this project's modified clauses, keyed by number."""
+    if not by_number:
+        return 0
+    with SessionLocal() as db:
+        rows = (
+            db.query(ProjectClause)
+            .filter(
+                ProjectClause.projectId == project_id,
+                ProjectClause.modified.is_(True),
+            )
+            .all()
+        )
+        n = 0
+        for r in rows:
+            text = (by_number.get((r.clause_number or "").strip()) or "").strip()
+            if text and not (r.interpretation or "").strip():
+                r.interpretation = text
+                n += 1
+        db.commit()
+        return n
 
 
 def apply_pcc_modifications(
@@ -201,7 +263,10 @@ def apply_pcc_modifications(
     Two effects, both re-computed from scratch each upload:
     - MODIFICATIONS: for each entry whose clause_number matches a book clause, set
       `modified`, record the `modification_note` and update the description to the
-      amended wording. Book clauses not matched are reset to unmodified.
+      amended wording — the original General-Conditions wording is preserved in
+      `base_description` first, so the card can show base clause → PCC amendment →
+      clause as amended. Book clauses not matched are reset to unmodified and get
+      their base wording back.
     - ADDITIONS: brand-new clauses the PCC introduces are stored as their own rows
       (source == "pcc"), replacing any additions from a previous PCC upload.
 
@@ -236,15 +301,27 @@ def apply_pcc_modifications(
             if m:
                 r.modified = True
                 r.modification_note = (m.get("modification_note") or "").strip() or None
+                r.interpretation = (m.get("interpretation") or "").strip() or None
                 new_desc = (m.get("new_description") or "").strip()
                 if new_desc:
+                    # Keep the base wording the first time this clause is amended;
+                    # on a re-upload it is already stored, so don't overwrite it
+                    # with the previous comparison's amended wording.
+                    if not (r.base_description or "").strip():
+                        r.base_description = r.clause_description or ""
                     r.clause_description = new_desc
                 r.updated_at = now
                 matched += 1
             else:
-                # Re-uploading a PCC re-evaluates from scratch.
+                # Re-uploading a PCC re-evaluates from scratch: a clause the new
+                # PCC leaves alone goes back to its base wording.
+                if (r.base_description or "").strip():
+                    r.clause_description = r.base_description
+                    r.base_description = None
+                    r.updated_at = now
                 r.modified = False
                 r.modification_note = None
+                r.interpretation = None
 
         # Replace any previously PCC-added clauses, then insert the fresh set.
         db.query(ProjectClause).filter(
