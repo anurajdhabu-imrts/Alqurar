@@ -1,5 +1,5 @@
 import { NavLink } from "react-router-dom";
-import { FileSignature, FolderKanban, LayoutDashboard, Settings, type LucideIcon } from "lucide-react";
+import { ClipboardCheck, FileSignature, FolderKanban, LayoutDashboard, Settings, type LucideIcon } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useUserPermissions } from "@/hooks/usePermission";
 
@@ -16,6 +16,7 @@ const items: NavItem[] = [
   { to: "/client", label: "Dashboard", icon: LayoutDashboard, end: true, permission: "client.dashboard" },
   { to: "/client/proposals", label: "Proposal", icon: FileSignature, permission: "client.dashboard" },
   { to: "/client/projects", label: "Projects", icon: FolderKanban, permission: "client.documents.upload" },
+  { to: "/client/checklist", label: "Document Checklist", icon: ClipboardCheck, permission: "client.documents.upload" },
 ];
 
 const accountItems: NavItem[] = [

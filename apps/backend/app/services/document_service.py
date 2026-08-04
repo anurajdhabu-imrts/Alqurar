@@ -21,6 +21,36 @@ def get_document(document_id: str) -> Optional[Dict]:
         return d.to_dict() if d else None
 
 
+def get_documents_meta(document_ids: List[str]) -> Dict[str, Dict]:
+    """Lightweight metadata (no bytes, no analysis) for a set of document ids,
+    keyed by id. Ids that no longer exist are simply absent from the result, so
+    callers holding references to deleted documents drop them automatically.
+    """
+    ids = [d for d in dict.fromkeys(document_ids) if d]
+    if not ids:
+        return {}
+    with SessionLocal() as db:
+        rows = (
+            db.query(
+                Document.id, Document.name, Document.type,
+                Document.uploadedAt, Document.uploadedBy, Document.sizeKB,
+            )
+            .filter(Document.id.in_(ids))
+            .all()
+        )
+    return {
+        r[0]: {
+            "id": r[0],
+            "name": r[1] or "file",
+            "type": r[2] or "Other",
+            "uploadedAt": r[3] or "",
+            "uploadedBy": r[4] or "",
+            "sizeKB": r[5] or 0,
+        }
+        for r in rows
+    }
+
+
 def next_document_id() -> str:
     """Return the next sequential document id: doc-1, doc-2, doc-3, ...
 

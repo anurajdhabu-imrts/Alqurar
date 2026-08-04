@@ -427,6 +427,14 @@ export function ClauseLibraryTab({
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           {filtered.map((c) => {
             const isNew = c.source === "pcc";
+            // A modified clause is shown in three parts: the base standard-form
+            // wording, the PCC amendment, then the clause as amended. `summary`
+            // already holds the amended wording; `baseDescription` the original.
+            const baseText = (c.baseDescription ?? "").trim();
+            const amendedText = (c.summary ?? "").trim();
+            // A PCC entry without amended wording leaves the description at the
+            // base text — no third part to show in that case.
+            const showAmended = !!amendedText && amendedText !== baseText;
             return (
             <Card
               key={c.id}
@@ -475,11 +483,51 @@ export function ClauseLibraryTab({
                 <span className="text-xs font-bold text-faint tabular-nums shrink-0">Clause {c.clause}</span>
               </div>
               <h3 className="mt-2.5 font-semibold text-ink">{c.title}</h3>
-              <p className="mt-1 text-sm text-muted">{c.summary}</p>
-              {!isNew && c.modified && c.modificationNote && (
-                <p className="mt-2 text-xs text-amber-800 bg-amber-50 rounded-md px-2.5 py-1.5">
-                  <span className="font-semibold">PCC amendment:</span> {c.modificationNote}
-                </p>
+              {!isNew && c.modified ? (
+                /* Read in the order the amendment happened: the base clause as it
+                   stands in the standard form, what the PCC changes, then the
+                   clause as it now reads under this contract. */
+                <div className="mt-2 space-y-2">
+                  <div className="rounded-md border border-border px-2.5 py-1.5">
+                    <p className="text-[11px] font-semibold uppercase tracking-wide text-faint">
+                      {c.book} · Clause {c.clause}
+                    </p>
+                    {baseText ? (
+                      <p className="mt-0.5 text-sm text-muted">{baseText}</p>
+                    ) : (
+                      <p className="mt-0.5 text-sm italic text-faint">
+                        Base wording isn't recorded for this clause — re-upload the Particular
+                        Conditions to capture it.
+                      </p>
+                    )}
+                  </div>
+                  <div className="rounded-md bg-amber-50 px-2.5 py-1.5">
+                    <p className="text-[11px] font-semibold uppercase tracking-wide text-amber-700">
+                      PCC amendment
+                    </p>
+                    <p className="mt-0.5 text-sm text-amber-900">
+                      {c.modificationNote || "Amended by the Particular Conditions."}
+                    </p>
+                  </div>
+                  {showAmended && (
+                    <div className="rounded-md bg-navy-50 px-2.5 py-1.5">
+                      <p className="text-[11px] font-semibold uppercase tracking-wide text-navy-700">
+                        Clause as amended
+                      </p>
+                      <p className="mt-0.5 text-sm text-ink">{amendedText}</p>
+                    </div>
+                  )}
+                  {c.interpretation && (
+                    <div className="rounded-md bg-emerald-50 px-2.5 py-1.5">
+                      <p className="text-[11px] font-semibold uppercase tracking-wide text-emerald-700">
+                        Interpretation
+                      </p>
+                      <p className="mt-0.5 text-sm text-emerald-900">{c.interpretation}</p>
+                    </div>
+                  )}
+                </div>
+              ) : (
+                <p className="mt-1 text-sm text-muted">{c.summary}</p>
               )}
               {isNew && (
                 <p className="mt-2 text-xs text-emerald-800 bg-emerald-50 rounded-md px-2.5 py-1.5">

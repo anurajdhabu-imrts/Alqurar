@@ -62,7 +62,28 @@ def init_db() -> None:
         conn.execute(text("ALTER TABLE project_clauses ADD COLUMN IF NOT EXISTS \"source\" VARCHAR DEFAULT 'manual'"))
         conn.execute(text('ALTER TABLE project_clauses ADD COLUMN IF NOT EXISTS "modified" BOOLEAN DEFAULT FALSE'))
         conn.execute(text('ALTER TABLE project_clauses ADD COLUMN IF NOT EXISTS "modification_note" TEXT'))
+        conn.execute(text('ALTER TABLE project_clauses ADD COLUMN IF NOT EXISTS "base_description" TEXT'))
+        conn.execute(text('ALTER TABLE project_clauses ADD COLUMN IF NOT EXISTS "interpretation" TEXT'))
         conn.execute(text('ALTER TABLE projects ADD COLUMN IF NOT EXISTS "clauseBookId" VARCHAR'))
         conn.execute(text('ALTER TABLE document_comments ADD COLUMN IF NOT EXISTS "anchorText" TEXT'))
         conn.execute(text('ALTER TABLE document_comments ADD COLUMN IF NOT EXISTS "anchorStart" INTEGER'))
         conn.execute(text('ALTER TABLE document_comments ADD COLUMN IF NOT EXISTS "anchorLength" INTEGER'))
+        # Backfill the base (General Conditions) wording for clauses a PCC upload
+        # amended BEFORE base_description existed: at that point the amended
+        # wording overwrote the description, but the base wording is still in the
+        # project's chosen Knowledge-Center book. Recovers it by clause number so
+        # those cards can show base clause → PCC amendment → clause as amended.
+        conn.execute(text(
+            """
+            UPDATE project_clauses pc
+               SET base_description = bc.summary
+              FROM projects p, book_clauses bc
+             WHERE pc."projectId" = p.id
+               AND bc."bookId" = p."clauseBookId"
+               AND btrim(bc.clause_number) = btrim(pc.clause_number)
+               AND pc.source = 'book'
+               AND pc.modified = TRUE
+               AND pc.base_description IS NULL
+               AND btrim(coalesce(bc.summary, '')) <> ''
+            """
+        ))
