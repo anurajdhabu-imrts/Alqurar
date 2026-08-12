@@ -26,9 +26,10 @@ export interface ProjectDetails extends Project {
   createdAt?: string;
   /** Where the project came from. */
   source: "contract" | "created";
-  /** "project" (default) or "proposal" — proposals live in the Proposals area
-   *  but reuse the same documents / delay-event pipeline. */
-  kind?: "project" | "proposal";
+  /** "project" (default), "proposal" — proposals live in the Proposals area — or
+   *  "chronology" for a standalone Chronology Gantt session. All three reuse the
+   *  same documents / delay-event pipeline; only the area they live in differs. */
+  kind?: "project" | "proposal" | "chronology";
   /** For proposals: the service line (drives costing defaults + proposal
    *  template). See lib/proposalTypes.ts. Empty for ordinary projects. */
   proposalType?: string;
@@ -88,10 +89,20 @@ export function useConvertProposal() {
   });
 }
 
-/** All ordinary projects (excludes proposals, which have their own area). */
+/** All ordinary projects. Allow-listed on kind, so records belonging to another
+ *  area (proposals, standalone chronology sessions) never leak in here. */
 export function useAllProjects(): ProjectDetails[] {
   const { data } = useProjectsQuery();
-  return useMemo(() => (data ?? []).filter((p) => (p.kind ?? "project") !== "proposal"), [data]);
+  return useMemo(() => (data ?? []).filter((p) => (p.kind ?? "project") === "project"), [data]);
+}
+
+/** Standalone Chronology Gantt sessions (kind === "chronology"), newest first. */
+export function useChronologySessions(): ProjectDetails[] {
+  const { data } = useProjectsQuery();
+  return useMemo(() => {
+    const list = (data ?? []).filter((p) => p.kind === "chronology");
+    return list.sort((a, b) => (b.createdAt ?? "").localeCompare(a.createdAt ?? ""));
+  }, [data]);
 }
 
 /** All proposals (kind === "proposal"), newest first. */

@@ -376,7 +376,10 @@ _EVENTS_SYSTEM_PROMPT = (
     "- 'sourceDocuments' lists the exact filenames (from those provided) that "
     "evidence the event.\n"
     "- 'chronology' is the ordered sequence of correspondence/site events; each "
-    "actor is 'Contractor', 'Engineer', 'Employer' or 'System'.\n"
+    "actor is 'Contractor', 'Engineer', 'Employer' or 'System'. Keep it to the key "
+    "milestones (roughly 3-8 entries) with a one-line 'detail' — the full "
+    "submission chronology is drafted separately, so do not expand it here.\n"
+    "- 'narrative' is a tight paragraph, not a full write-up.\n"
     "- 'aiConfidence' is an integer 0-100 for how well the documents support the event."
 )
 
@@ -461,6 +464,55 @@ def _clause_library_block(clauses: list[dict]) -> str:
     return "\n".join(lines)
 
 
+def _salvage_array_items(payload: str, key: str) -> list[dict]:
+    """Recover the complete objects from a `{"key": [ ... ` array cut off mid-write.
+
+    A response that stops at max_tokens leaves valid JSON objects followed by a
+    half-written one, so `json.loads` fails on the whole payload and every event
+    is lost. Scanning for balanced top-level objects inside the array keeps the
+    ones the model did finish.
+    """
+    start = payload.find(f'"{key}"')
+    if start == -1:
+        return []
+    start = payload.find("[", start)
+    if start == -1:
+        return []
+
+    items: list[dict] = []
+    depth = 0
+    obj_start = -1
+    in_string = False
+    escaped = False
+    for i in range(start + 1, len(payload)):
+        ch = payload[i]
+        if in_string:
+            if escaped:
+                escaped = False
+            elif ch == "\\":
+                escaped = True
+            elif ch == '"':
+                in_string = False
+            continue
+        if ch == '"':
+            in_string = True
+        elif ch == "{":
+            if depth == 0:
+                obj_start = i
+            depth += 1
+        elif ch == "}":
+            depth -= 1
+            if depth == 0 and obj_start != -1:
+                try:
+                    items.append(json.loads(payload[obj_start : i + 1]))
+                except json.JSONDecodeError:
+                    pass
+                obj_start = -1
+        elif ch == "]" and depth == 0:
+            break
+    return items
+
+
 async def extract_delay_events(
     *,
     documents: list[dict],
@@ -500,7 +552,11 @@ async def extract_delay_events(
     # use adaptive thinking at low effort for a good speed/quality balance.
     async with _client().messages.stream(
         model=EXTRACTION_MODEL,
-        max_tokens=8192,
+        # A data room with a hundred documents yields a long register — each event
+        # carries a narrative plus a chronology. At 8k the JSON was cut off mid-
+        # string and the whole run failed to parse, so the budget matches the
+        # chronology generator's.
+        max_tokens=32000,
         thinking={"type": "adaptive"},
         system=[
             {
@@ -517,9 +573,33 @@ async def extract_delay_events(
     ) as stream:
         response = await stream.get_final_message()
 
-    payload = next((b.text for b in response.content if b.type == "text"), "")
-    data = json.loads(payload)
-    return data.get("events", [])
+    payload = "".join(b.text for b in response.content if b.type == "text").strip()
+    if not payload:
+        raise ValueError(
+            "The AI returned no delay events "
+            f"(stop_reason={response.stop_reason}). Please run the identification again."
+        )
+    try:
+        return json.loads(payload).get("events", [])
+    except json.JSONDecodeError:
+        # Keep whatever the model finished before it ran out of room rather than
+        # losing the entire register to one half-written event.
+        salvaged = _salvage_array_items(payload, "events")
+        if salvaged:
+            logger.warning(
+                "Delay-event output truncated (stop_reason=%s); salvaged %d event(s)",
+                response.stop_reason,
+                len(salvaged),
+            )
+            return salvaged
+        if response.stop_reason == "max_tokens":
+            raise ValueError(
+                "The delay-event register was cut off before completion — the data "
+                "room may be very large. Please try again."
+            ) from None
+        raise ValueError(
+            "The AI returned a malformed delay-event register. Please try again."
+        ) from None
 
 
 # ── Per-event chronology generation ─────────────────────────────────────────
@@ -529,33 +609,88 @@ async def extract_delay_events(
 # tells the story of every delay from the correspondence and site records.
 
 _CHRONOLOGY_SYSTEM_PROMPT = (
-    "You are a forensic delay analyst assembling the CHRONOLOGY of events for an "
-    "Extension of Time (EOT) claim under standards such as FIDIC, NEC4 and CPWD. "
-    "You are given (1) the register of delay events already identified for a "
-    "project — each with a reference such as 'DE-01' — and (2) the extracted text "
-    "of the project's data-room documents. For EACH delay event, build the ordered "
-    "sequence of correspondence and site events that tells the story of that delay.\n\n"
+    "You are a forensic delay analyst drafting the DELAY EVENT NARRATIVE section of "
+    "an Extension of Time (EOT) claim submission under standards such as FIDIC, NEC4 "
+    "and CPWD. You are given (1) the register of delay events already identified for "
+    "a project — each with a reference such as 'DE-01' — and (2) the extracted text "
+    "of the project's data-room documents. For EACH delay event you must produce the "
+    "full submission-quality write-up that a claims consultant would put in front of "
+    "the Engineer: an introduction, a delay event timeline, a dated chronology of the "
+    "correspondence, a cause & effect analysis and a statement of contractual "
+    "entitlement.\n\n"
+    "House style — this is a formal claim document, not a summary:\n"
+    "- Write in the third person, past tense, naming the parties by their contractual "
+    "role ('the Contractor', 'the Engineer', 'the Employer'), never 'we' or 'they'.\n"
+    "- Spell dates out in full in prose, e.g. 'On 20 April 2025 the Engineer issued…'.\n"
+    "- Quote letter references, RFC/EI/RFI numbers, sub-clause numbers, day counts and "
+    "figures EXACTLY as they appear in the documents.\n"
+    "- Do NOT use bullet points, markdown headings or markdown emphasis anywhere. Plain "
+    "prose paragraphs only; separate paragraphs with a blank line.\n\n"
     "Rules:\n"
-    "- Produce one chronology per delay event, keyed by the event's EXACT 'eventRef' "
-    "as given (e.g. 'DE-01'). Do not invent event references.\n"
-    "- Ground every entry in the document text. Do NOT invent dates, events, parties "
-    "or figures that the documents do not support.\n"
-    "- Order each chronology by date, earliest first.\n"
+    "- Produce one write-up per delay event, keyed by the event's EXACT 'eventRef' as "
+    "given (e.g. 'DE-01'). Do not invent event references.\n"
+    "- Ground EVERY statement in the document text. Do NOT invent dates, letters, "
+    "parties, clause numbers or figures the documents do not support. Where the record "
+    "is silent, say so rather than filling the gap.\n\n"
+    "Field by field:\n"
+    "- 'introduction' — one to three paragraphs introducing what the event concerns, "
+    "how it arose, the instruction or change that triggered it, and the Contractor's "
+    "overall position on time and cost relief.\n"
+    "- 'timeline' — one or two paragraphs narrating the event from commencement to "
+    "closure: the date it commenced and what commenced it, the principal phases in "
+    "between, and the date and basis on which it closed. If the event is still "
+    "ongoing at the end of the record, state that it remains ongoing and that the cut "
+    "off date is adopted as the event closure date for the purpose of the delay "
+    "analysis.\n"
+    "- 'chronology' — the ordered sequence of correspondence and site events, earliest "
+    "first, one entry per letter, instruction, meeting, submission or response found "
+    "in the documents. Be exhaustive: this is the evidential backbone of the claim, so "
+    "include every step the documents record, not a selection.\n"
+    "- 'causeEffect' — one or two paragraphs identifying the PRIMARY cause of the event "
+    "and tracing it through to its effect on the Works: what was prevented or deferred, "
+    "which activities and which parties were affected, and how the effect reached the "
+    "Time for Completion.\n"
+    "- 'entitlement' — one to three paragraphs setting out the contractual basis of the "
+    "claim: the sub-clauses relied on for extension of time and for cost, how the "
+    "Contractor complied with any notice or particulars requirement, and any "
+    "reservation of rights. Cite only sub-clauses that appear in the documents or in "
+    "the event's own recorded clause.\n\n"
+    "Chronology entries:\n"
+    "- Order by date, earliest first.\n"
     "- 'date' is ISO format (YYYY-MM-DD); use an empty string only when the document "
     "gives no date.\n"
+    "- 'endDate' is ISO format (YYYY-MM-DD) and records when the step CONCLUDED — it "
+    "drives the timeline bars, so set it on every entry that has a 'date'. For a step "
+    "that happened on a single day (a letter issued, an instruction served, a meeting "
+    "held, a submission made), set 'endDate' EQUAL to 'date'. For a step that ran over "
+    "a period (a review or approval cycle, a series of workshops, a period of "
+    "inactivity awaiting a response, an ongoing delay), set it to the date the "
+    "documents record the step as concluding — and where the step is still running at "
+    "the end of the record, use the cut-off date adopted for the analysis. Never guess "
+    "a duration the documents do not support: if the step's end is genuinely unknown, "
+    "use an empty string.\n"
     "- 'actor' is who took the step: 'Contractor', 'Engineer', 'Employer' or 'System'.\n"
-    "- 'title' is a short one-line description of the step (e.g. 'RFI-042 raised for "
-    "IFC drawings'); 'detail' adds one or two sentences of context.\n"
+    "- 'title' is a short one-line description of the step (e.g. 'RFC-058 issued — "
+    "quotation requested under Sub-Clause 13.3A').\n"
+    "- 'detail' is the substance of that step written as claim prose — typically two to "
+    "five sentences opening with the date, e.g. 'On 20 April 2025, pursuant to "
+    "Sub-Clause 13.3A, the Engineer requested the Contractor to submit a quotation "
+    "for…'. Carry across the reference numbers, durations, positions taken and "
+    "determinations recorded in the document.\n"
     "- 'sourceDocument' is the EXACT filename (from those provided) that evidences the "
     "step; use an empty string if no single document does.\n"
-    "- If a delay event has no supporting chronology in the documents, return an empty "
-    "chronology array for it."
+    "- If a delay event has no supporting record in the documents, return an empty "
+    "chronology array and empty strings for the narrative fields rather than inventing "
+    "content."
 )
 
 _CHRON_ITEM_SCHEMA = {
     "type": "object",
     "properties": {
         "date": {"type": "string"},
+        # Equal to `date` for a single-day step, later for one that ran over a
+        # period. Drives the Gantt bars in the Chronology tab's timeline view.
+        "endDate": {"type": "string"},
         "actor": {
             "type": "string",
             "enum": ["Contractor", "Engineer", "Employer", "System"],
@@ -564,7 +699,7 @@ _CHRON_ITEM_SCHEMA = {
         "detail": {"type": "string"},
         "sourceDocument": {"type": "string"},
     },
-    "required": ["date", "actor", "title", "detail", "sourceDocument"],
+    "required": ["date", "endDate", "actor", "title", "detail", "sourceDocument"],
     "additionalProperties": False,
 }
 
@@ -572,9 +707,15 @@ _EVENT_CHRON_SCHEMA = {
     "type": "object",
     "properties": {
         "eventRef": {"type": "string"},
+        "introduction": {"type": "string"},
+        "timeline": {"type": "string"},
         "chronology": {"type": "array", "items": _CHRON_ITEM_SCHEMA},
+        "causeEffect": {"type": "string"},
+        "entitlement": {"type": "string"},
     },
-    "required": ["eventRef", "chronology"],
+    "required": [
+        "eventRef", "introduction", "timeline", "chronology", "causeEffect", "entitlement",
+    ],
     "additionalProperties": False,
 }
 
@@ -603,19 +744,31 @@ def _events_for_chronology(events: list[dict]) -> str:
     return "\n".join(lines) or "(no delay events)"
 
 
+# A submission-quality write-up runs to a few thousand tokens per event, so the
+# register is processed in small batches rather than one call — otherwise the
+# output budget truncates the JSON on projects with many delay events.
+CHRONOLOGY_BATCH_SIZE = int(os.getenv("CHRONOLOGY_BATCH_SIZE", "3"))
+
+
 async def generate_event_chronologies(
     *,
     events: list[dict],
     documents: list[dict],
     project_name: str | None = None,
     standard: str | None = None,
+    on_progress=None,
 ) -> list[dict]:
-    """Build a dated chronology per delay event from the project's documents.
+    """Build the full narrative + dated chronology per delay event from the documents.
 
     `events` is the stored delay-event register (each with a 'ref'); `documents`
     is a list of {"name", "type", "text", "truncated"} dicts. Returns a list of
-    {"eventRef", "chronology": [{date, actor, title, detail, sourceDocument}]} —
-    the caller maps each chronology back onto its event by ref.
+    {"eventRef", "introduction", "timeline", "causeEffect", "entitlement",
+    "chronology": [{date, actor, title, detail, sourceDocument}]} — the caller maps
+    each entry back onto its event by ref.
+
+    Events are processed in batches of `CHRONOLOGY_BATCH_SIZE`. The data room is
+    identical across batches and is sent as a cached content block, so only the
+    first batch pays for it. `on_progress(done, total)` is called after each batch.
     """
     ctx_bits = []
     if project_name:
@@ -624,39 +777,85 @@ async def generate_event_chronologies(
         ctx_bits.append(f"Contract standard: {standard}")
     header = " | ".join(ctx_bits)
 
-    blocks = [header] if header else []
-    blocks.append(
-        "\n===== DELAY EVENTS REGISTER (build one chronology per event, keyed by eventRef) ====="
-    )
-    blocks.append(_events_for_chronology(events))
+    doc_blocks = [header] if header else []
     for d in documents:
         name = d.get("name", "document")
         note = " (truncated)" if d.get("truncated") else ""
         body = d.get("text") or "(no machine-readable text — use the filename only)"
-        blocks.append(f"\n===== Document: {name} [{d.get('type', 'Other')}]{note} =====\n{body}")
-    user_content = "\n".join(blocks)
+        doc_blocks.append(f"\n===== Document: {name} [{d.get('type', 'Other')}]{note} =====\n{body}")
+    docs_text = "\n".join(doc_blocks)
 
-    async with _client().messages.stream(
-        model=EXTRACTION_MODEL,
-        max_tokens=8192,
-        thinking={"type": "adaptive"},
-        system=[
-            {
-                "type": "text",
-                "text": _CHRONOLOGY_SYSTEM_PROMPT,
-                "cache_control": {"type": "ephemeral"},
-            }
-        ],
-        messages=[{"role": "user", "content": user_content}],
-        output_config={
-            "effort": "low",
-            "format": {"type": "json_schema", "schema": _CHRONOLOGY_OUTPUT_SCHEMA},
-        },
-    ) as stream:
-        response = await stream.get_final_message()
+    batches = [
+        events[i : i + CHRONOLOGY_BATCH_SIZE]
+        for i in range(0, len(events), max(1, CHRONOLOGY_BATCH_SIZE))
+    ]
 
-    payload = next((b.text for b in response.content if b.type == "text"), "")
-    return json.loads(payload).get("chronologies", [])
+    async def _run_batch(batch: list[dict]) -> list[dict]:
+        async with _client().messages.stream(
+            model=EXTRACTION_MODEL,
+            # The narrative sections plus an exhaustive chronology are long; a
+            # small budget silently truncates the JSON mid-event.
+            max_tokens=32000,
+            thinking={"type": "adaptive"},
+            system=[
+                {
+                    "type": "text",
+                    "text": _CHRONOLOGY_SYSTEM_PROMPT,
+                    "cache_control": {"type": "ephemeral"},
+                }
+            ],
+            messages=[
+                {
+                    "role": "user",
+                    "content": [
+                        # Cache breakpoint: the data room is the same for every
+                        # batch, so batches after the first read it from cache.
+                        {
+                            "type": "text",
+                            "text": docs_text,
+                            "cache_control": {"type": "ephemeral"},
+                        },
+                        {
+                            "type": "text",
+                            "text": (
+                                "\n===== DELAY EVENTS REGISTER (write one full narrative "
+                                "per event below, keyed by eventRef) =====\n"
+                                + _events_for_chronology(batch)
+                            ),
+                        },
+                    ],
+                }
+            ],
+            output_config={
+                "effort": "medium",
+                "format": {"type": "json_schema", "schema": _CHRONOLOGY_OUTPUT_SCHEMA},
+            },
+        ) as stream:
+            response = await stream.get_final_message()
+
+        payload = "".join(b.text for b in response.content if b.type == "text").strip()
+        if not payload:
+            logger.warning(
+                "Empty chronology payload for %s (stop_reason=%s)",
+                [e.get("ref") for e in batch],
+                response.stop_reason,
+            )
+            return []
+        return json.loads(payload).get("chronologies", [])
+
+    results: list[dict] = []
+    done = 0
+    for i, batch in enumerate(batches):
+        try:
+            results.extend(await _run_batch(batch))
+        except json.JSONDecodeError:
+            # One over-long batch shouldn't lose the whole run — the events in it
+            # keep their existing chronology and the rest still generate.
+            logger.warning("Unparseable chronology output for batch %s", i, exc_info=True)
+        done += len(batch)
+        if on_progress:
+            on_progress(done, len(events))
+    return results
 
 
 # ── Clause extraction (per project's own Clause Library) ────────────────────
@@ -1581,7 +1780,7 @@ async def generate_client_proposal(
     user_content = (
         "PROPOSAL DETAILS\n" + "\n".join(header)
         + admin_section
-        + "\n\nDELAY EVENTS IDENTIFIED BY AI (context for the proposal)\n"
+        + "\n\nDELAY EVENTS IDENTIFIED FROM THE PROJECT RECORDS (context for the proposal)\n"
         + _events_brief(events)
         + "\n\nSUPPORTING DOCUMENTS\n" + docs
         + proposal_templates.user_directive(ptype, currency, today)
@@ -1589,7 +1788,9 @@ async def generate_client_proposal(
 
     async with _client().messages.stream(
         model=MODEL,
-        max_tokens=16000,
+        # Headroom for the long-form service lines (the EOT template prescribes a
+        # full six-section document) — thinking counts toward this budget too.
+        max_tokens=32000,
         thinking={"type": "adaptive"},
         system=[
             {"type": "text", "text": system_prompt, "cache_control": {"type": "ephemeral"}}

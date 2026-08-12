@@ -289,7 +289,14 @@ export function ProjectWorkspacePage() {
         {tab === "events" && <DelayEventsTab projectId={id} />}
         {tab === "eventsByDoc" && <EventsByDocumentTab projectId={id} />}
         {tab === "queries" && <QueriesTab projectId={id} />}
-        {tab === "chronology" && <ChronologyTab projectId={id} />}
+        {tab === "chronology" && (
+          <ChronologyTab
+            projectId={id}
+            projectName={project.name}
+            projectCode={project.code}
+            projectStandard={project.standard}
+          />
+        )}
         {tab === "admissibility" && <AdmissibilityTab projectId={id} />}
         {tab === "proposal" && <ProposalTab projectId={id} />}
         {tab === "clauses" && <ClauseLibraryTab projectId={id} projectStandard={project.standard} />}

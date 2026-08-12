@@ -1,12 +1,15 @@
 """Background per-event chronology generation.
 
 For a project's EXISTING delay events, Claude reads the data-room documents and
-builds a dated chronology for each event, keyed by the event's reference. Like
-delay-event extraction, this reasons over the whole data room, so it runs as a
-background job with in-memory, pollable per-project status. The generated
-chronology replaces each event's `chronology` field (and links any newly-cited
-document into the event's sources), so the result shows up in both the
-Chronology tab and the Delay Events detail panel.
+builds the full claim write-up for each event, keyed by the event's reference:
+an introduction, a delay event timeline, a dated chronology of the
+correspondence, a cause & effect analysis and a statement of contractual
+entitlement. Like delay-event extraction, this reasons over the whole data room,
+so it runs as a background job with in-memory, pollable per-project status.
+
+The output replaces each event's `chronology` and `chronologyNarrative` fields
+(and links any newly-cited document into the event's sources), so the result
+shows up in both the Chronology tab and the Delay Events detail panel.
 """
 import asyncio
 import os
@@ -19,7 +22,8 @@ from app.services import delay_event_service, project_service  # noqa: F401
 from app.services.ai_service import generate_event_chronologies
 from app.services.delay_event_extraction import _load
 
-# projectId -> {"status": "idle"|"running"|"done"|"failed", "error"?, "count"?}
+# projectId -> {"status": "idle"|"running"|"done"|"failed", "error"?, "count"?,
+#               "done"?, "total"?}  — done/total drive the tab's progress readout.
 _status: Dict[str, dict] = {}
 _sem = asyncio.Semaphore(int(os.getenv("EXTRACTION_CONCURRENCY", "2")))
 
@@ -65,6 +69,9 @@ def _map_chronology(
         chronology.append({
             "id": f"chr-{uuid.uuid4().hex[:8]}",
             "date": c.get("date", ""),
+            # Only kept when it doesn't precede the start; the timeline falls back
+            # to the next recorded step when absent.
+            "endDate": (c.get("endDate") or "") if (c.get("endDate") or "") >= (c.get("date") or "") else "",
             "actor": c.get("actor", "Contractor"),
             "title": c.get("title", ""),
             "detail": c.get("detail") or None,
@@ -100,11 +107,17 @@ async def run_generation(project_id: str) -> None:
                 }
                 return
 
+            _status[project_id] = {"status": "running", "done": 0, "total": len(events)}
+
+            def _progress(done: int, total: int) -> None:
+                _status[project_id] = {"status": "running", "done": done, "total": total}
+
             results = await generate_event_chronologies(
                 events=events,
                 documents=docs_for_ai,
                 project_name=project.get("name"),
                 standard=project.get("standard"),
+                on_progress=_progress,
             )
             by_ref = {e.get("ref"): e for e in events}
 
@@ -117,9 +130,16 @@ async def run_generation(project_id: str) -> None:
                     chronology, sources = _map_chronology(
                         r.get("chronology", []), ev.get("sources", []), docs_by_name
                     )
-                    delay_event_service.update_event(
-                        ev["id"], {"chronology": chronology, "sources": sources}
-                    )
+                    delay_event_service.update_event(ev["id"], {
+                        "chronology": chronology,
+                        "sources": sources,
+                        "chronologyNarrative": {
+                            "introduction": r.get("introduction", ""),
+                            "timeline": r.get("timeline", ""),
+                            "causeEffect": r.get("causeEffect", ""),
+                            "entitlement": r.get("entitlement", ""),
+                        },
+                    })
                     updated += 1
                 return updated
 

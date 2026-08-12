@@ -19,11 +19,11 @@ from fastapi.responses import StreamingResponse
 from app.services.assignment_service import project_ids_for_client
 from app.services.client_profile_service import get_by_token
 from app.services.document_service import (
-    create_document,
+    SELF_ID,
+    create_document_with_next_id,
     get_document,
     get_document_file,
     list_by_project,
-    next_document_id,
 )
 from app.services.project_service import get_project
 
@@ -89,10 +89,8 @@ async def portal_upload(
     _require_project(profile, projectId)
 
     content = await file.read()
-    doc_id = next_document_id()
     uploader = profile.get("contactName") or profile.get("company") or "Client"
     record = {
-        "id": doc_id,
         "projectId": projectId,
         "name": file.filename or "file",
         "type": _doc_type(file.filename or ""),
@@ -100,12 +98,12 @@ async def portal_upload(
         "uploadedAt": datetime.now(timezone.utc).isoformat(),
         "uploadedBy": uploader,
         "status": "Uploaded",
-        "driveFileId": doc_id,
+        "driveFileId": SELF_ID,
         "data": content,
         "mime": file.content_type or "application/octet-stream",
         "uploadedById": profile["userId"],  # so the client sees it in their folder
     }
-    return create_document(record)
+    return create_document_with_next_id(record)
 
 
 @router.get("/{token}/documents/{document_id}/download")

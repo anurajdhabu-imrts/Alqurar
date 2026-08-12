@@ -148,13 +148,13 @@ def _children(priced: list, group_index: int) -> list:
 
 
 def _costing_summary(project_id: str) -> dict:
-    """The proposal's Cost Sheet rolled up for the client-facing costing lines.
+    """The proposal's Cost Sheet rolled up for the client-facing fee line.
 
-    Returns one base line per activity (its name, work-hours and base cost) and the
-    marked-up components — Contingency, Overheads, Profit, Income Tax and VAT — so
-    the commercial table can list each as its own row. `hours`/`amount` carry the
-    totals (total work-hours and the marked-up Suggested Pricing) for the no-detail
-    fallback. Empty sheet → zeros / empty lists."""
+    `amount` is the marked-up Suggested Pricing — the single figure the client sees;
+    `hours` the total work-hours behind it. `activities` (name, work-hours, base
+    cost) stays internal: the commercial table shows only the total, but a non-empty
+    list is what tells the caller a Cost Sheet has actually been built. Empty sheet →
+    zeros / empty list."""
     sheet = costing_service.get_sheet(project_id)
     activities = []
     for a in sheet.get("activities", []):
@@ -172,18 +172,10 @@ def _costing_summary(project_id: str) -> dict:
         })
 
     s = sheet.get("summary") or {}
-    markups = [
-        {"item": "Contingency", "pct": float(s.get("contingencyPct") or 0), "amount": float(s.get("contingencyAmount") or 0)},
-        {"item": "Overheads", "pct": float(s.get("overheadsPct") or 0), "amount": float(s.get("overheadsAmount") or 0)},
-        {"item": "Profit", "pct": float(s.get("profitPct") or 0), "amount": float(s.get("profitAmount") or 0)},
-        {"item": "Income Tax", "pct": float(s.get("incomeTaxPct") or 0), "amount": float(s.get("incomeTaxAmount") or 0)},
-        {"item": "VAT", "pct": float(s.get("vatPct") or 0), "amount": float(s.get("vatAmount") or 0)},
-    ]
     return {
         "hours": sum(x["hours"] for x in activities),
         "amount": float(s.get("suggestedPricing") or 0),
         "activities": activities,
-        "markups": markups,
     }
 
 
@@ -192,14 +184,17 @@ def _apply_admin_commercials(content: dict, inputs: dict, costing=None) -> dict:
     (so the fees are exact, not AI-invented) and recompute the net total after any
     special discount.
 
-    A group line (e.g. "Delay Analysis") carries no price of its own — it is priced
-    by the sub-lines nested under it, and shows their subtotal.
+    The client-facing table stays short: the internal breakdown the admin works with
+    is rolled up so the client sees one price per work package, not our build-up.
 
-    The 'Costing' line (flagged `costing`) is priced from the Cost Sheet and expands
-    into several top-level rows: one base line per activity (its work-hours and base
-    cost) followed by a line for each non-zero markup (Contingency, Overheads,
-    Profit, Income Tax, VAT); a 0% markup such as VAT at 0% is omitted. With no Cost
-    Sheet the single line is dropped unless a price was typed."""
+    A group line (e.g. "Delay Analysis") is priced by the sub-lines the admin nested
+    under it, but the events themselves are NOT listed — the group collapses to a
+    single row carrying their subtotal.
+
+    The 'Professional Fees' line (flagged `costing`) likewise collapses to a single
+    row at the Cost Sheet's Suggested Pricing — the per-activity work-hours and the
+    Contingency, Overheads, Profit, Income Tax and VAT build-up stay internal to the
+    Cost Sheet. With no Cost Sheet the line is dropped unless a price was typed."""
     cost = costing or {}
     items = (inputs or {}).get("lineItems") or []
 
@@ -213,45 +208,15 @@ def _apply_admin_commercials(content: dict, inputs: dict, costing=None) -> dict:
         is_costing = bool(it.get("costing"))
         typed = str(it.get("amount", "")).strip()
         amount = _to_number(it.get("amount"))
-        hours = None
 
         if is_costing:
-            # The client-facing fee, sourced from the Cost Sheet. Expand it into one
-            # base line per activity plus a line for each non-zero markup
-            # (Contingency, Overheads, Profit, Income Tax, VAT), all top-level rows.
-            activities = cost.get("activities") or []
-            markups = cost.get("markups") or []
-            if activities:
-                base_desc = str(it.get("description", "")).strip()
-                base_tl = str(it.get("timeline", "")).strip()
-                for a in activities:
-                    priced.append({
-                        "item": str(a.get("name") or "").strip() or "Professional fee",
-                        "description": base_desc,
-                        "timeline": base_tl,
-                        "amount": float(a.get("amount") or 0),
-                        "group": False,
-                        "sub": False,
-                        "costing": True,
-                        "hours": float(a.get("hours") or 0),
-                    })
-                for m in markups:
-                    m_amount = float(m.get("amount") or 0)
-                    if round(m_amount, 3) == 0:
-                        continue  # hide zero / 0% markups (e.g. VAT at 0%)
-                    priced.append({
-                        "item": str(m.get("item") or "").strip(),
-                        "description": "",
-                        "timeline": "",
-                        "amount": m_amount,
-                        "group": False,
-                        "sub": False,
-                        "costing": True,
-                    })
-                continue  # expanded into rows above — skip the single-row append
-            if not typed:
+            # The client-facing fee: one row at the marked-up Suggested Pricing.
+            sheet_total = float(cost.get("amount") or 0)
+            if cost.get("activities") and round(sheet_total, 3) != 0:
+                amount = sheet_total
+            elif not typed:
                 continue  # no Cost Sheet and no typed price → omit the line
-            # else: no sheet but a manual price was typed → keep one line below.
+            # else: no sheet but a manual price was typed → keep that price.
         elif is_sub and not typed:
             continue  # unpriced delay-event line → skip
         elif not is_group and not is_sub and not typed:
@@ -267,24 +232,27 @@ def _apply_admin_commercials(content: dict, inputs: dict, costing=None) -> dict:
         }
         if is_costing:
             row["costing"] = True
-        if hours is not None:
-            row["hours"] = hours
         priced.append(row)
 
-    # Drop a group header whose sub-lines were all skipped.
-    priced = [
-        c
-        for i, c in enumerate(priced)
-        if not c["group"] or (i + 1 < len(priced) and priced[i + 1]["sub"])
-    ]
+    # Roll each group up into a single priced row and drop its sub-lines: the client
+    # sees "Delay Analysis — OMR x", not the per-event pricing behind it. A group
+    # with no priced sub-lines is dropped entirely.
+    rolled = []
     for i, c in enumerate(priced):
+        if c["sub"]:
+            continue
         if c["group"]:
-            c["amount"] = sum(s["amount"] for s in _children(priced, i))
-    if not any(not c["group"] for c in priced):
+            children = _children(priced, i)
+            if not children:
+                continue
+            c = {**c, "amount": sum(s["amount"] for s in children), "group": False}
+        rolled.append(c)
+    priced = rolled
+    if not priced:
         return content
 
     costing = list(priced)
-    total = sum(c["amount"] for c in priced if not c["group"])
+    total = sum(c["amount"] for c in priced)
     discount = _to_number((inputs or {}).get("discount"))
     if discount > 0:
         costing.append(

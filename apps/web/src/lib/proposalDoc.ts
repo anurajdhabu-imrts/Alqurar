@@ -27,6 +27,7 @@ import {
 import type { ClientProposal } from "@/api/clientProposals";
 import { formatCurrencyFull } from "@/lib/utils";
 import { displayDescription, rowNumbers } from "@/lib/proposalCosting";
+import { parseProposalBody, type Run } from "@/lib/proposalMarkup";
 
 type Content = NonNullable<ClientProposal["content"]>;
 
@@ -106,28 +107,59 @@ function heading(text: string): Paragraph {
   });
 }
 
-/** Section body → paragraphs (justified), honoring blank-line paragraphs and "- " bullets. */
+/** Markup runs → Word text runs, honouring **bold** and the italic letter lines. */
+function textRuns(runs: Run[], size = 21): TextRun[] {
+  return runs.map(
+    (r) => new TextRun({ text: r.text, bold: r.bold, italics: r.italic, size, color: BODY }),
+  );
+}
+
+/** Section body → Word paragraphs: sub-headings, bullet and numbered lists, bold
+ *  lead-ins and paragraph spacing (see lib/proposalMarkup.ts — the same markup the
+ *  screen view and the PDF export lay out). */
 function bodyParagraphs(body: string): Paragraph[] {
   const out: Paragraph[] = [];
-  const blocks = String(body ?? "").split(/\n{2,}/);
-  for (const block of blocks) {
-    const lines = block.split("\n");
-    const nonEmpty = lines.filter((l) => l.trim());
-    const bullets = lines.filter((l) => /^\s*[-•]\s+/.test(l));
-    if (bullets.length && bullets.length === nonEmpty.length) {
-      for (const l of lines) {
-        const t = l.replace(/^\s*[-•]\s+/, "").trim();
-        if (t) out.push(new Paragraph({ children: [new TextRun({ text: t, size: 21, color: BODY })], bullet: { level: 0 }, spacing: { after: 50 } }));
-      }
-    } else {
-      const runs: TextRun[] = [];
-      lines.forEach((l, i) => {
-        if (i > 0) runs.push(new TextRun({ break: 1 }));
-        runs.push(new TextRun({ text: l, size: 21, color: BODY }));
-      });
-      out.push(new Paragraph({ alignment: AlignmentType.JUSTIFIED, spacing: { after: 130 }, children: runs }));
+  parseProposalBody(body).forEach((block, i) => {
+    if (block.kind === "subheading") {
+      out.push(
+        new Paragraph({
+          spacing: { before: 200, after: 80 },
+          children: [new TextRun({ text: block.text, bold: true, color: NAVY, size: 22, underline: {} })],
+        }),
+      );
+      return;
     }
-  }
+    if (block.kind === "para") {
+      out.push(
+        new Paragraph({
+          alignment: AlignmentType.JUSTIFIED,
+          // A blank line before the paragraph opens a new one; consecutive lines
+          // (an address block, a sign-off) stay tight together.
+          spacing: { before: block.spaced && i > 0 ? 120 : 0, after: 60 },
+          children: textRuns(block.runs),
+        }),
+      );
+      return;
+    }
+    for (const it of block.items) {
+      out.push(
+        it.marker
+          ? new Paragraph({
+              spacing: { after: 60 },
+              indent: { left: 360 + it.level * 360, hanging: 260 },
+              children: [
+                new TextRun({ text: `${it.marker}\t`, bold: true, size: 21, color: NAVY }),
+                ...textRuns(it.runs),
+              ],
+            })
+          : new Paragraph({
+              spacing: { after: 60 },
+              bullet: { level: it.level },
+              children: textRuns(it.runs),
+            }),
+      );
+    }
+  });
   return out.length ? out : [new Paragraph({ text: "" })];
 }
 
@@ -200,7 +232,7 @@ function commercialTable(doc: Content): (Paragraph | Table)[] {
     rows,
   });
 
-  const out: (Paragraph | Table)[] = [heading("Commercial Proposal"), table];
+  const out: (Paragraph | Table)[] = [heading(`${doc.sections.length + 1}. Commercial Proposal`), table];
   if (doc.paymentTerms?.length) {
     out.push(new Paragraph({ spacing: { before: 160, after: 50 }, children: [new TextRun({ text: "Payment Terms", bold: true, color: MAROON, size: 22, underline: {} })] }));
     for (const t of doc.paymentTerms) out.push(new Paragraph({ children: [new TextRun({ text: t, size: 21, color: BODY })], bullet: { level: 0 }, spacing: { after: 50 } }));

@@ -214,8 +214,8 @@ class DelayEvent(Base):
 
     Plain data storage — no AI involved. Events are created manually by the
     analyst (or seeded), reviewed (Accept / Merge / Reject), edited and deleted.
-    `chronology` and `sources` are lists, stored whole as JSON columns so they
-    match the frontend shape exactly.
+    `chronology`, `chronologyNarrative` and `sources` are stored whole as JSON
+    columns so they match the frontend shape exactly.
     """
 
     __tablename__ = "delay_events"
@@ -236,6 +236,10 @@ class DelayEvent(Base):
     aiConfidence: Mapped[int] = mapped_column(Integer, default=0)
     reviewStatus: Mapped[str] = mapped_column(String, default="Pending")
     chronology: Mapped[list] = mapped_column(JSON, default=list)
+    # The submission-style write-up that frames the chronology — introduction,
+    # delay event timeline, cause & effect and contractual entitlement. Written by
+    # the AI chronology generator alongside `chronology`; null until generated.
+    chronologyNarrative: Mapped[Optional[dict]] = mapped_column(JSON, nullable=True)
     sources: Mapped[list] = mapped_column(JSON, default=list)
     createdAt: Mapped[Optional[str]] = mapped_column(String, nullable=True)
     updatedAt: Mapped[Optional[str]] = mapped_column(String, nullable=True)
@@ -243,7 +247,7 @@ class DelayEvent(Base):
     _FIELDS = (
         "id", "projectId", "ref", "title", "category", "narrative", "cause", "clause",
         "startDate", "endDate", "daysImpact", "criticalPath", "admissibility",
-        "aiConfidence", "reviewStatus", "chronology", "sources",
+        "aiConfidence", "reviewStatus", "chronology", "chronologyNarrative", "sources",
     )
 
     def to_dict(self) -> dict:

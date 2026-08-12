@@ -4,7 +4,11 @@ import { api } from "./client";
 export interface ChronologyStatus {
   status: "idle" | "running" | "done" | "failed";
   error?: string;
+  /** Events written, once a run finishes. */
   count?: number;
+  /** Progress while running: events written so far, out of `total`. */
+  done?: number;
+  total?: number;
 }
 
 /**
