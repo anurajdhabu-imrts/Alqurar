@@ -4,6 +4,7 @@ import { Info } from "lucide-react";
 import { Card, CardHeader } from "@/components/ui/Card";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { UploadedDocsList } from "@/components/client/UploadedDocsList";
+import { CLIENT_UPLOAD_ACCEPT, CLIENT_UPLOAD_HINT } from "@/components/client/clientUploadTypes";
 import { DocumentsPanel } from "@/components/DocumentsPanel";
 import { useAssignedProposals } from "@/hooks/useAssignments";
 import { useProjectDocuments, useCreateProjectDoc } from "@/hooks/useProjectDocuments";
@@ -108,6 +109,8 @@ export function ClaimDocumentUploadPage() {
                       claimContext={{ standard: selected.standard }}
                       onUploaded={handleUploaded}
                       autoAnalyze={false}
+                      accept={CLIENT_UPLOAD_ACCEPT}
+                      hint={CLIENT_UPLOAD_HINT}
                     />
                   ) : (
                     <p className="text-sm text-muted">

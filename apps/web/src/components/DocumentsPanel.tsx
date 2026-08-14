@@ -1,9 +1,10 @@
 import { useCallback, useState } from "react";
-import { useDropzone } from "react-dropzone";
+import { useDropzone, type Accept, type FileRejection } from "react-dropzone";
 import {
   AlertCircle,
   Brain,
   CheckCircle2,
+  FileArchive,
   FileCode2,
   FileSpreadsheet,
   FileText,
@@ -32,6 +33,7 @@ const typeIcon: Record<DocType, LucideIcon> = {
   "P6 XML": FileCode2,
   MPP: FileCode2,
   Scan: ScanLine,
+  ZIP: FileArchive,
   Other: FileText,
 };
 
@@ -42,6 +44,7 @@ const typeTint: Record<DocType, string> = {
   "P6 XML": "bg-navy-100 text-navy-700",
   MPP: "bg-navy-100 text-navy-700",
   Scan: "bg-warning-bg text-warning",
+  ZIP: "bg-amber-50 text-amber-700",
   Other: "bg-navy-50 text-muted",
 };
 
@@ -53,6 +56,7 @@ function typeFromName(name: string): DocType {
   if (ext === "xml") return "P6 XML";
   if (ext === "mpp") return "MPP";
   if (["png", "jpg", "jpeg", "tif", "tiff"].includes(ext)) return "Scan";
+  if (ext === "zip") return "ZIP";
   return "Other";
 }
 
@@ -73,6 +77,8 @@ export function DocumentsPanel({
   onAnalyzed,
   onUploaded,
   autoAnalyze = true,
+  accept,
+  hint,
 }: {
   seed: ClaimDocument[];
   kind?: "claim" | "contract";
@@ -88,11 +94,22 @@ export function DocumentsPanel({
    * (the project Data Room) so files aren't analysed twice.
    */
   autoAnalyze?: boolean;
+  /**
+   * Restrict what the file picker offers and what a drop accepts. When undefined
+   * every file type is allowed (the default everywhere except the client portal,
+   * which pins its own list — see `CLIENT_UPLOAD_ACCEPT`).
+   */
+  accept?: Accept;
+  /** Overrides the line of small print under the drop zone. */
+  hint?: string;
 }) {
   const [docs, setDocs] = useState<PanelDoc[]>(seed);
+  // Names the dropzone turned away because `accept` didn't cover their type.
+  const [rejected, setRejected] = useState<string[]>([]);
 
   const onDrop = useCallback(
     (accepted: File[]) => {
+      if (accepted.length) setRejected([]); // clear a stale "unsupported type" notice
       accepted.forEach((f) => onUploaded?.(f));
       const added = accepted.map((f, i) => {
         const type = typeFromName(f.name);
@@ -136,7 +153,12 @@ export function DocumentsPanel({
     [autoAnalyze, claimContext, onAnalyzed, onUploaded],
   );
 
-  const { getRootProps, getInputProps, isDragActive } = useDropzone({ onDrop });
+  const onDropRejected = useCallback(
+    (rejections: FileRejection[]) => setRejected(rejections.map((r) => r.file.name)),
+    [],
+  );
+
+  const { getRootProps, getInputProps, isDragActive } = useDropzone({ onDrop, onDropRejected, accept });
 
   const parsed = docs.filter((d) => d.status === "Parsed").length;
 
@@ -155,11 +177,22 @@ export function DocumentsPanel({
           Drag &amp; drop documents, or <span className="text-navy-700">browse</span>
         </p>
         <p className="text-xs text-faint mt-1">
-          {kind === "claim"
-            ? "PDF, DOCX, Excel, P6 XML, MS Project (MPP) and scanned site diaries (OCR)"
-            : "Contracts, sub-contracts, purchase orders and amendments — PDF, DOCX, Excel"}
+          {hint ??
+            (kind === "claim"
+              ? "PDF, DOCX, Excel, P6 XML, MS Project (MPP) and scanned site diaries (OCR)"
+              : "Contracts, sub-contracts, purchase orders and amendments — PDF, DOCX, Excel")}
         </p>
       </div>
+
+      {rejected.length > 0 && (
+        <p className="flex items-start gap-1.5 rounded-md bg-error-bg px-3 py-2 text-xs text-error">
+          <AlertCircle className="size-3.5 shrink-0 mt-px" />
+          <span>
+            {rejected.join(", ")} {rejected.length === 1 ? "is" : "are"} not a supported file type.{" "}
+            {hint ?? "Please upload a supported document."}
+          </span>
+        </p>
+      )}
 
       <div className="flex items-center justify-between text-sm">
         <p className="font-semibold text-ink">{docs.length} documents</p>

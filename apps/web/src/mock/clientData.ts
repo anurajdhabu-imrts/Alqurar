@@ -123,6 +123,7 @@ const EXT_TO_TYPE: Record<string, DocType> = {
   jpeg: "Scan",
   tif: "Scan",
   tiff: "Scan",
+  zip: "ZIP",
 };
 
 export function docTypeFromName(name: string): DocType {
