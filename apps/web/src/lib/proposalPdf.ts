@@ -9,6 +9,8 @@ import { jsPDF } from "jspdf";
 import type { ClientProposal } from "@/api/clientProposals";
 import { formatCurrencyFull } from "@/lib/utils";
 import { displayDescription, rowNumbers } from "@/lib/proposalCosting";
+import { inlineRuns, parseProposalBody, type ListItem, type Run } from "@/lib/proposalMarkup";
+import { tocEntries } from "@/lib/proposalToc";
 
 type Content = NonNullable<ClientProposal["content"]>;
 type RGB = [number, number, number];
@@ -28,8 +30,6 @@ const TAGLINE_2 = "Respect | Trust | Continual Improvement | Service";
 const CONFIDENTIAL =
   "This document is the sole property of Al Qarar Management Solutions. Any unauthorized use, reproduction, or distribution of this document is strictly prohibited.";
 
-type Run = { text: string; bold?: boolean; italic?: boolean };
-
 /** Fetch a same-origin asset (e.g. the logo in /public) as a base64 data URL. */
 export async function fetchAsDataUrl(url: string): Promise<string> {
   try {
@@ -46,34 +46,34 @@ export async function fetchAsDataUrl(url: string): Promise<string> {
   }
 }
 
-/** Parse inline **bold** markers into styled runs. */
-function inlineRuns(text: string): Run[] {
-  const runs: Run[] = [];
-  for (const p of text.split(/(\*\*[^*]+\*\*)/g)) {
-    if (p === "") continue;
-    const m = p.match(/^\*\*([^*]+)\*\*$/);
-    runs.push({ text: m ? m[1] : p, bold: !!m });
+/** The document face: Poppins Light for body copy, SemiBold for emphasis. */
+const POPPINS = "Poppins";
+const POPPINS_FILES: [string, "normal" | "bold" | "italic" | "bolditalic"][] = [
+  ["Poppins-Light", "normal"],
+  ["Poppins-SemiBold", "bold"],
+  ["Poppins-LightItalic", "italic"],
+  ["Poppins-SemiBoldItalic", "bolditalic"],
+];
+
+/** Embed Poppins into the document and return the family to draw with. jsPDF only
+ *  ships the 14 standard PDF faces, so the TTFs are fetched from /public and added
+ *  to its virtual file system; if any fetch fails the export falls back to
+ *  Helvetica rather than producing a broken PDF. */
+async function embedPoppins(pdf: jsPDF): Promise<string> {
+  try {
+    const files = await Promise.all(
+      POPPINS_FILES.map(([name]) => fetchAsDataUrl(`/fonts/${name}.ttf`)),
+    );
+    if (files.some((d) => !d.includes(","))) return "helvetica";
+    files.forEach((data, i) => {
+      const [name, style] = POPPINS_FILES[i];
+      pdf.addFileToVFS(`${name}.ttf`, data.slice(data.indexOf(",") + 1));
+      pdf.addFont(`${name}.ttf`, POPPINS, style);
+    });
+    return POPPINS;
+  } catch {
+    return "helvetica";
   }
-  return runs.length ? runs : [{ text }];
-}
-
-/** Cover-letter-aware styling for a single line (Subject / Kind Attn / M/s …). */
-function lineRuns(line: string): Run[] {
-  const t = line.replace(/\s+$/, "");
-  if (/^\s*Subject\s*:/i.test(t)) return [{ text: t.trim(), bold: true }];
-  if (/^\s*Kind\s*Attn/i.test(t)) return [{ text: t.trim(), bold: true, italic: true }];
-  if (/^\s*M\/s\b/.test(t)) return [{ text: t.trim(), bold: true }];
-  return inlineRuns(t);
-}
-
-/** A one-line "## Heading" or "**Heading**" block → sub-heading text, else null. */
-function subheadingText(block: string): string | null {
-  const t = block.trim();
-  if (t.includes("\n")) return null;
-  let m = t.match(/^#{2,4}\s+(.+)$/);
-  if (m) return m[1].trim();
-  m = t.match(/^\*\*(.+?)\*\*:?$/);
-  return m ? m[1].trim() : null;
 }
 
 export interface ProposalPdfOpts {
@@ -85,8 +85,9 @@ export interface ProposalPdfOpts {
 }
 
 /** Build the branded PDF and trigger a download. */
-export function downloadProposalPdf(doc: Content, opts: ProposalPdfOpts): void {
+export async function downloadProposalPdf(doc: Content, opts: ProposalPdfOpts): Promise<void> {
   const pdf = new jsPDF({ unit: "pt", format: "a4" });
+  const family = await embedPoppins(pdf);
   const W = pdf.internal.pageSize.getWidth();
   const H = pdf.internal.pageSize.getHeight();
   const M = 64;
@@ -98,7 +99,7 @@ export function downloadProposalPdf(doc: Content, opts: ProposalPdfOpts): void {
   let y = contentTop;
 
   const setFont = (b?: boolean, i?: boolean) =>
-    pdf.setFont("helvetica", b && i ? "bolditalic" : b ? "bold" : i ? "italic" : "normal");
+    pdf.setFont(family, b && i ? "bolditalic" : b ? "bold" : i ? "italic" : "normal");
   const setColor = (c: RGB) => pdf.setTextColor(c[0], c[1], c[2]);
   const setFill = (c: RGB) => pdf.setFillColor(c[0], c[1], c[2]);
   const setDraw = (c: RGB) => pdf.setDrawColor(c[0], c[1], c[2]);
@@ -155,15 +156,39 @@ export function downloadProposalPdf(doc: Content, opts: ProposalPdfOpts): void {
     if (cur.length) lines.push(cur);
     return lines.length ? lines : [[]];
   }
-  function drawRunLine(line: Run[], x: number, yy: number, size: number, color: RGB) {
+  /** `stretch` widens each inter-word space, which is how a line gets justified —
+   *  the runs are drawn one at a time anyway, so the extra is simply added to the
+   *  pen position as each space is passed. */
+  function drawRunLine(line: Run[], x: number, yy: number, size: number, color: RGB, stretch = 0) {
     pdf.setFontSize(size);
     let cx = x;
     for (const t of line) {
       setFont(t.bold, t.italic);
       setColor(color);
       pdf.text(t.text, cx, yy);
-      cx += pdf.getTextWidth(t.text);
+      cx += pdf.getTextWidth(t.text) + (t.text === " " ? stretch : 0);
     }
+  }
+  /** Natural drawn width of a wrapped line. */
+  function lineWidth(line: Run[], size: number): number {
+    pdf.setFontSize(size);
+    let w = 0;
+    for (const t of line) {
+      setFont(t.bold, t.italic);
+      w += pdf.getTextWidth(t.text);
+    }
+    return w;
+  }
+  /** Extra width to add to each space so the line fills `maxW`. Capped so a
+   *  sparsely filled line (one long unbreakable word) never blows apart. */
+  function justifyStretch(line: Run[], maxW: number, size: number): number {
+    const spaces = line.filter((t) => t.text === " ").length;
+    if (!spaces) return 0;
+    pdf.setFontSize(size);
+    setFont(false, false);
+    const slack = maxW - lineWidth(line, size);
+    if (slack <= 0) return 0;
+    return Math.min(slack / spaces, pdf.getTextWidth(" ") * 2.2);
   }
   const ensure = (space: number) => {
     if (y + space > contentBottom) {
@@ -172,47 +197,74 @@ export function downloadProposalPdf(doc: Content, opts: ProposalPdfOpts): void {
     }
   };
 
+  /** Body paragraph, justified to both margins — the last line of the paragraph is
+   *  left as-is, as in any typeset document. */
   function para(runs: Run[], size = 10, gap = 6, color: RGB = BODY, indent = 0) {
-    const lh = size * 1.5;
-    for (const ln of wrap(runs, contentW - indent, size)) {
-      ensure(lh);
-      drawRunLine(ln, M + indent, y, size, color);
-      y += lh;
-    }
-    y += gap;
-  }
-  function bullet(runs: Run[]) {
-    const size = 10;
-    const lh = size * 1.5;
-    const lines = wrap(runs, contentW - 22, size);
-    ensure(lh);
-    setFill(BODY);
-    pdf.circle(M + 10, y - 3, 1.3, "F");
+    const lh = size * 1.55;
+    const maxW = contentW - indent;
+    const lines = wrap(runs, maxW, size);
     lines.forEach((ln, i) => {
-      if (i > 0) ensure(lh);
-      drawRunLine(ln, M + 22, y, size, BODY);
+      ensure(lh);
+      const stretch = i < lines.length - 1 ? justifyStretch(ln, maxW, size) : 0;
+      drawRunLine(ln, M + indent, y, size, color, stretch);
       y += lh;
     });
-    y += 5;
+    y += gap;
   }
+  /** One list row: a filled bullet at the margin, a hollow one when nested, or the
+   *  written marker ("1)", "a)") for a numbered point. */
+  function listRow(it: ListItem) {
+    const size = 10;
+    const lh = size * 1.55;
+    const x = M + 10 + it.level * 18;
+    pdf.setFontSize(size);
+    setFont(it.marker ? true : false, false);
+    const gap = it.marker ? Math.max(pdf.getTextWidth(it.marker) + 6, 15) : 13;
+    const textW = contentW - (x - M) - gap;
+    const lines = wrap(it.runs, textW, size);
+    ensure(lh);
+    if (it.marker) {
+      pdf.setFontSize(size);
+      setFont(true, false);
+      setColor(NAVY);
+      pdf.text(it.marker, x, y);
+    } else if (it.level > 0) {
+      setDraw(BODY);
+      pdf.setLineWidth(0.7);
+      pdf.circle(x + 2.5, y - 3, 1.4, "S");
+    } else {
+      setFill(BODY);
+      pdf.circle(x + 2.5, y - 3, 1.4, "F");
+    }
+    lines.forEach((ln, i) => {
+      if (i > 0) ensure(lh);
+      const stretch = i < lines.length - 1 ? justifyStretch(ln, textW, size) : 0;
+      drawRunLine(ln, x + gap, y, size, BODY, stretch);
+      y += lh;
+    });
+    y += 4;
+  }
+  function bullet(runs: Run[]) {
+    listRow({ marker: "", level: 0, runs });
+  }
+  /** Numbered section heading — maroon, bold, uppercase, on a full-width rule, as
+   *  in the printed AQMS template. */
   function sectionHeading(text: string) {
-    ensure(40);
-    y += 20;
-    const size = 12;
+    ensure(46);
+    y += 6;
+    const size = 11.5;
     pdf.setFontSize(size);
     setFont(true, false);
     for (const l of pdf.splitTextToSize(text.toUpperCase(), contentW)) {
-      const w = pdf.getTextWidth(l);
-      const cx = M + (contentW - w) / 2;
-      ensure(size * 1.6);
+      ensure(size * 1.55);
       setColor(MAROON);
-      pdf.text(l, cx, y);
-      setDraw(MAROON);
-      pdf.setLineWidth(0.7);
-      pdf.line(cx, y + 2.5, cx + w, y + 2.5);
-      y += size * 1.6;
+      pdf.text(l, M, y);
+      y += size * 1.55;
     }
-    y += 12;
+    setDraw(MAROON);
+    pdf.setLineWidth(0.8);
+    pdf.line(M, y - 10, M + contentW, y - 10);
+    y += 8;
   }
   function subHeading(text: string, color: RGB = NAVY) {
     ensure(26);
@@ -233,28 +285,81 @@ export function downloadProposalPdf(doc: Content, opts: ProposalPdfOpts): void {
     y += 5;
   }
 
+  /** Lay out a section body from its markup — sub-headings, bullet and numbered
+   *  lists, bold lead-ins and paragraph spacing (see lib/proposalMarkup.ts). */
   function processBody(body: string) {
-    for (const block of String(body ?? "").split(/\n{2,}/)) {
-      if (!block.trim()) continue;
-      const sub = subheadingText(block);
-      if (sub) {
-        subHeading(sub);
-        continue;
+    parseProposalBody(body).forEach((block, i) => {
+      if (block.kind === "subheading") {
+        subHeading(block.text);
+        return;
       }
-      const lines = block.split("\n");
-      const nonEmpty = lines.filter((l) => l.trim());
-      const bl = lines.filter((l) => /^\s*[-•]\s+/.test(l));
-      if (bl.length && bl.length === nonEmpty.length) {
-        for (const l of lines) {
-          const t = l.replace(/^\s*[-•]\s+/, "").trim();
-          if (t) bullet(inlineRuns(t));
-        }
-        y += 8;
-      } else {
-        for (const l of nonEmpty) para(lineRuns(l), 10, 4);
-        y += 10;
+      if (block.kind === "para") {
+        // A blank line before the paragraph opens a new one; consecutive lines
+        // (an address block, a sign-off) stay tight together.
+        if (block.spaced && i > 0) y += 6;
+        para(block.runs, 10, 2);
+        return;
       }
-    }
+      y += 3;
+      for (const it of block.items) listRow(it);
+      y += 6;
+    });
+  }
+
+  // ── Table of contents ─────────────────────────────────────────────────────
+  // The TOC page is reserved before the sections are laid out, then filled in at
+  // the end once each heading's real page is known. `startPages` collects them in
+  // entry order as the document is written.
+  const startPages: number[] = [];
+  /** The number printed in the footer for a PDF page — the cover is unnumbered. */
+  const printedPage = (pdfPage: number) => pdfPage - 1;
+
+  function tableOfContents(tocPage: number) {
+    if (!startPages.length) return;
+    pdf.setPage(tocPage);
+
+    // Centred title, then one navy row per heading with a dot leader running out
+    // to its page number.
+    y = 168;
+    const tSize = 17;
+    pdf.setFontSize(tSize);
+    setFont(true, false);
+    setColor(NAVY);
+    const t = "Table of Contents";
+    pdf.text(t, M + (contentW - pdf.getTextWidth(t)) / 2, y);
+    y += 44;
+
+    const size = 10;
+    const rowH = 26;
+    const numColW = 26;
+    tocEntries(doc).forEach((e, i) => {
+      const page = startPages[i];
+      if (!page) return;
+      const num = String(printedPage(page));
+      pdf.setFontSize(size);
+      setFont(false, false);
+      setColor(NAVY);
+      // Long headings are trimmed rather than wrapped so the rows stay even.
+      const maxLabelW = contentW - numColW - 24;
+      let label = `${e.no}. ${e.title}`.toUpperCase();
+      while (pdf.getTextWidth(label) > maxLabelW && label.length > 4) {
+        label = label.slice(0, -2) + "…";
+      }
+      pdf.text(label, M, y);
+      const labelW = pdf.getTextWidth(label);
+      const numW = pdf.getTextWidth(num);
+      pdf.text(num, M + contentW - numW, y);
+      const from = M + labelW + 5;
+      const to = M + contentW - numW - 5;
+      if (to > from) {
+        setDraw(NAVY);
+        pdf.setLineWidth(0.5);
+        pdf.setLineDashPattern([0.6, 2.6], 0);
+        pdf.line(from, y - 2.5, to, y - 2.5);
+        pdf.setLineDashPattern([], 0);
+      }
+      y += rowH;
+    });
   }
 
   // ── Commercial table ──────────────────────────────────────────────────────
@@ -262,7 +367,8 @@ export function downloadProposalPdf(doc: Content, opts: ProposalPdfOpts): void {
     if (!doc.costing?.length) return;
     pdf.addPage();
     y = contentTop;
-    sectionHeading("Commercial Proposal");
+    startPages.push(pdf.getNumberOfPages());
+    sectionHeading(`${doc.sections.length + 1}. Commercial Proposal`);
     const showTL = doc.costing.some((c) => (c.timeline ?? "").trim());
     const noW = 34;
     const amtW = 96;
@@ -453,27 +559,36 @@ export function downloadProposalPdf(doc: Content, opts: ProposalPdfOpts): void {
     y += f.h + gap;
   }
 
-  y = 170;
-  coverText("PROPOSAL SUBMITTED TO", 16, MAROON, true, false, 16);
-  coverImg(opts.clientLogo, 130, 80, 14);
-  if (opts.clientCompany) coverText(opts.clientCompany, 18, MAROON, true, false, 16);
+  // Both marks are given a generous box so they read at a comparable weight; the
+  // block starts higher to keep the project name and date clear of the page edge.
+  // Every label is tied to its content — a heading with nothing beneath it reads
+  // as a gap in the document, so it is dropped along with the missing field.
+  y = 165;
+  if (opts.clientLogo || opts.clientCompany) {
+    coverText("PROPOSAL SUBMITTED TO", 16, MAROON, true, false, 16);
+    coverImg(opts.clientLogo, 125, 72, 14);
+    if (opts.clientCompany) coverText(opts.clientCompany, 18, MAROON, true, false, 16);
+  }
   coverText("PREPARED BY", 16, MAROON, true, false, 12);
-  coverImg(opts.alqararLogo, 220, 70, 10);
+  coverImg(opts.alqararLogo, 175, 60, 10);
   coverText(TAGLINE_1, 13, NAVY, false, true, 2);
   coverText(TAGLINE_2, 11, NAVY, false, true, 18);
-  coverText("For", 16, MAROON, true, false, 12);
-  coverText(opts.projectName || title, 20, MAROON, true, false, 12);
+  if (opts.projectName) {
+    coverText("For", 16, MAROON, true, false, 12);
+    coverText(opts.projectName, 20, MAROON, true, false, 12);
+  }
   if (doc.date) coverText(doc.date, 13, MAROON, true, false, 0);
 
   // ── Content pages ─────────────────────────────────────────────────────────
+  // Page 2 is reserved for the table of contents and written last, once every
+  // section's real starting page is known.
   pdf.addPage();
-  y = contentTop;
+  const tocPage = pdf.getNumberOfPages();
   doc.sections.forEach((s, i) => {
-    if (i > 0) {
-      // Each numbered section starts on a fresh page (matches the template).
-      pdf.addPage();
-      y = contentTop;
-    }
+    // Each numbered section starts on a fresh page (matches the template).
+    pdf.addPage();
+    y = contentTop;
+    startPages.push(pdf.getNumberOfPages());
     sectionHeading(`${i + 1}. ${s.heading}`);
     if (i === 0 && (doc.reference || doc.date)) {
       ensure(16);
@@ -487,6 +602,7 @@ export function downloadProposalPdf(doc: Content, opts: ProposalPdfOpts): void {
     processBody(s.body);
   });
   commercial();
+  tableOfContents(tocPage);
 
   // Stamp the band + footer on every content page (page 2 onward).
   const pageCount = pdf.getNumberOfPages();

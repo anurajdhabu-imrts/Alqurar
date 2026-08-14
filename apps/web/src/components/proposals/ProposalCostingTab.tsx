@@ -51,14 +51,19 @@ const DELAY_GROUP: ProposalLineItem = {
   amount: "",
   group: true,
 };
-/** Point 3 — the professional fee, priced from the Cost Sheet (Suggested Pricing). */
+/** The professional fee, priced from the Cost Sheet (Suggested Pricing). */
 const COSTING_LINE: ProposalLineItem = {
-  item: "Costing",
-  description: "Professional fee for the claim assignment, based on the estimated work-hours in the cost sheet.",
+  item: "Professional Fees",
+  description: "Professional fee for the assignment, covering the scope of services described above.",
   timeline: "",
   amount: "",
   costing: true,
 };
+/** The name this line carried before it was renamed — proposals saved under it must
+ *  still resolve to the fee line rather than being treated as a custom extra. */
+const LEGACY_COSTING_ITEM = "Costing";
+const isCostingLine = (l: ProposalLineItem) =>
+  !!l.costing || l.item === COSTING_LINE.item || l.item === LEGACY_COSTING_ITEM;
 
 /** Parse an admin amount string ("1,200", "OMR 400") to a number. */
 function parseNum(v?: string): number {
@@ -78,40 +83,43 @@ function eventsToLines(events: ProjectDelayEvent[]): ProposalLineItem[] {
   return events.map((e) => ({ item: e.title, description: shortDesc(e.narrative), timeline: "", amount: "", sub: true }));
 }
 
-const FIXED_ITEMS = [ANCHOR_FIRST.item, ANCHOR_LAST.item, DELAY_GROUP.item, COSTING_LINE.item];
+const FIXED_ITEMS = [ANCHOR_FIRST.item, ANCHOR_LAST.item, DELAY_GROUP.item, COSTING_LINE.item, LEGACY_COSTING_ITEM];
 
 /**
  * Build the full line-items list. Delay-driven service lines (Claims Support, EOT,
  * Delay Expert) use anchor-first, the Delay Analysis group with one sub-line per
- * delay event, the Costing line, custom lines, then anchor-last. Cost-driven lines
- * (Quantum Expert, Quantum Claims) use a fixed fee skeleton + the Costing line.
+ * delay event, the fee line, custom lines, then anchor-last. Cost-driven lines
+ * (Quantum Expert, Quantum Claims) use a fixed fee skeleton + the fee line.
  */
 function buildLineItems(saved: ProposalLineItem[] | undefined, events: ProjectDelayEvent[], ptype?: string): ProposalLineItem[] {
+  // A saved fee line keeps its price and wording but always takes the current name.
+  const savedCosting = (s: ProposalLineItem[]) => {
+    const found = s.find(isCostingLine);
+    return found ? { ...found, item: COSTING_LINE.item, costing: true } : { ...COSTING_LINE };
+  };
   if (!isDelayDriven(ptype)) {
     const feeItems = feeLineItems(ptype);
     if (saved?.length) {
-      // Preserve saved fee lines (matched by item) + custom extras; keep the Costing line.
-      const costing = saved.find((l) => l.item === COSTING_LINE.item) ?? { ...COSTING_LINE };
+      // Preserve saved fee lines (matched by item) + custom extras; keep the fee line.
+      const costing = savedCosting(saved);
       const feeNames = new Set(feeItems.map((f) => f.item));
+      const extras = saved.filter((l) => !feeNames.has(l.item) && !isCostingLine(l) && !l.group && !l.sub);
       const feeLines = feeItems.map((f) => saved.find((l) => l.item === f.item) ?? { ...f });
-      const extras = saved.filter(
-        (l) => !feeNames.has(l.item) && l.item !== COSTING_LINE.item && !l.group && !l.sub,
-      );
-      return [...feeLines, { ...costing, costing: true }, ...extras];
+      return [...feeLines, costing, ...extras];
     }
     return [...feeItems, { ...COSTING_LINE }];
   }
   if (saved?.length) {
-    // Ensure the anchors, group header and Costing line exist; preserve saved content.
+    // Ensure the anchors, group header and fee line exist; preserve saved content.
     const first = saved.find((l) => l.item === ANCHOR_FIRST.item) ?? { ...ANCHOR_FIRST };
     const last = saved.find((l) => l.item === ANCHOR_LAST.item) ?? { ...ANCHOR_LAST };
     const group = saved.find((l) => l.item === DELAY_GROUP.item) ?? { ...DELAY_GROUP };
-    const costing = saved.find((l) => l.item === COSTING_LINE.item) ?? { ...COSTING_LINE };
-    const inner = saved.filter((l) => !FIXED_ITEMS.includes(l.item));
+    const costing = savedCosting(saved);
+    const inner = saved.filter((l) => !FIXED_ITEMS.includes(l.item) && !l.costing);
     // Proposals saved before grouping have flat event lines — nest them.
     const nested = inner.filter((l) => l.sub ?? true).map((l) => ({ ...l, sub: true }));
     const extras = inner.filter((l) => l.sub === false);
-    return [first, { ...group, group: true }, ...nested, { ...costing, costing: true }, ...extras, last];
+    return [first, { ...group, group: true }, ...nested, costing, ...extras, last];
   }
   const eventLines = events.length ? eventsToLines(events) : [{ item: "", timeline: "", description: "", amount: "", sub: true }];
   return [{ ...ANCHOR_FIRST }, { ...DELAY_GROUP }, ...eventLines, { ...COSTING_LINE }, { ...ANCHOR_LAST }];
@@ -151,29 +159,20 @@ export function ProposalCostingTab({ proposalId }: { proposalId: string }) {
   const { data: costSheet } = useCostingQuery(proposalId);
   const fileRef = useRef<HTMLInputElement>(null);
 
-  // The Cost Sheet rolled up for the Costing line (point 3), matching the backend
-  // _costing_summary: one base line per activity (name, work-hours, base cost) plus
-  // the marked-up components. The Costing line expands into these rows in the table.
+  // The Cost Sheet rolled up for the Professional Fees line, matching the backend
+  // _costing_summary: the client-facing figure is the marked-up Suggested Pricing,
+  // printed as a single row. The per-activity work-hours and the contingency /
+  // overheads / profit build-up stay internal to the Costing tab — a priced activity
+  // is only what tells us a sheet has been built.
   const costingActivities = (costSheet?.activities ?? [])
     .map((a) => ({
-      name: a.description,
       hours: a.entries.reduce((t, e) => t + (Number.isFinite(e.hours) ? e.hours : 0), 0),
       amount: a.entries.reduce((t, e) => t + (Number.isFinite(e.hours) ? e.hours : 0) * (Number.isFinite(e.rate) ? e.rate : 0), 0),
     }))
     .filter((a) => a.amount > 0 || a.hours > 0);
-  const sheetSummary = costSheet?.summary;
-  const costingMarkups = sheetSummary
-    ? [
-        { item: "Contingency", pct: sheetSummary.contingencyPct, amount: sheetSummary.contingencyAmount },
-        { item: "Overheads", pct: sheetSummary.overheadsPct, amount: sheetSummary.overheadsAmount },
-        { item: "Profit", pct: sheetSummary.profitPct, amount: sheetSummary.profitAmount },
-        { item: "Income Tax", pct: sheetSummary.incomeTaxPct, amount: sheetSummary.incomeTaxAmount },
-        { item: "VAT", pct: sheetSummary.vatPct, amount: sheetSummary.vatAmount },
-      ].filter((m) => Math.round(m.amount * 1000) !== 0)
-    : [];
   const costingSummary = {
     hours: costingActivities.reduce((t, a) => t + a.hours, 0),
-    amount: sheetSummary?.suggestedPricing ?? 0,
+    amount: costSheet?.summary?.suggestedPricing ?? 0,
     hasSheet: costingActivities.length > 0,
   };
 
@@ -239,14 +238,14 @@ export function ProposalCostingTab({ proposalId }: { proposalId: string }) {
       const first = f.lineItems?.find((l) => l.item === ANCHOR_FIRST.item) ?? { ...ANCHOR_FIRST };
       const last = f.lineItems?.find((l) => l.item === ANCHOR_LAST.item) ?? { ...ANCHOR_LAST };
       const group = f.lineItems?.find((l) => l.item === DELAY_GROUP.item) ?? { ...DELAY_GROUP };
-      const costing = f.lineItems?.find((l) => l.item === COSTING_LINE.item) ?? { ...COSTING_LINE };
+      const costing = f.lineItems?.find(isCostingLine) ?? { ...COSTING_LINE };
       const extras = (f.lineItems ?? []).filter((l) => l.sub === false && !FIXED_ITEMS.includes(l.item));
       return { ...f, lineItems: [first, { ...group, group: true }, ...eventLines, { ...costing, costing: true }, ...extras, last] };
     });
   }
 
   const numbers = rowNumbers(lines);
-  /** The effective amount of a line: the Costing line takes the Cost Sheet's
+  /** The effective amount of a line: the fee line takes the Cost Sheet's
    *  Suggested Pricing; a group is the subtotal of its children; every other line
    *  uses its typed price. */
   function amountOf(i: number): number {
@@ -285,7 +284,7 @@ export function ProposalCostingTab({ proposalId }: { proposalId: string }) {
     try {
       const { downloadProposalPdf, fetchAsDataUrl } = await import("@/lib/proposalPdf");
       const alqararLogo = await fetchAsDataUrl("/Al Qarar Logo.png");
-      downloadProposalPdf(doc, {
+      await downloadProposalPdf(doc, {
         clientLogo: proposal?.inputs?.logo,
         alqararLogo,
         clientCompany: proposal?.inputs?.clientCompany || record?.employer,
@@ -412,7 +411,7 @@ export function ProposalCostingTab({ proposalId }: { proposalId: string }) {
               <div className="flex items-center justify-between mb-2">
                 <div>
                   <p className="label mb-0">{delayDriven ? "Prices — identified delay events" : "Prices — fee line items"}</p>
-                  <p className="text-xs text-faint mt-0.5">Enter a price for each line. The Costing line is priced automatically from the Costing tab.</p>
+                  <p className="text-xs text-faint mt-0.5">Enter a price for each line. The {COSTING_LINE.item} line is priced automatically from the Costing tab.</p>
                 </div>
                 <div className="flex items-center gap-2">
                   {delayDriven && events.length > 0 && (
@@ -432,7 +431,8 @@ export function ProposalCostingTab({ proposalId }: { proposalId: string }) {
                 {lines.map((l, i) => {
                   const isAnchor = l.item === ANCHOR_FIRST.item || l.item === ANCHOR_LAST.item;
                   // The group header is priced by its children, so it shows a subtotal
-                  // instead of a price input.
+                  // instead of a price input. Price the events one by one here — the
+                  // proposal prints the group as a single line at this subtotal.
                   if (l.group) {
                     const subtotal = amountOf(i);
                     return (
@@ -440,6 +440,7 @@ export function ProposalCostingTab({ proposalId }: { proposalId: string }) {
                         <div className="min-w-0">
                           <p className="text-sm font-semibold leading-snug text-navy-700">{numbers[i]}. {l.item}</p>
                           {l.description && <p className="text-xs text-muted leading-snug mt-0.5">{l.description}</p>}
+                          <p className="text-[11px] text-faint mt-0.5">Prints as one line at this subtotal — the events below are priced here but not listed in the proposal.</p>
                         </div>
                         <p className="text-sm font-semibold tabular-nums text-navy-700 whitespace-nowrap pt-0.5">
                           {formatCurrencyFull(subtotal, currency)}
@@ -447,16 +448,16 @@ export function ProposalCostingTab({ proposalId }: { proposalId: string }) {
                       </div>
                     );
                   }
-                  // The Costing line (point 3) is priced from the Cost Sheet, not typed.
-                  // It expands into one base row per activity plus a row for each
-                  // non-zero markup — shown here so the admin sees the table rows.
+                  // The fee line is priced from the Cost Sheet, not typed.
+                  // It prints as ONE row at the Suggested Pricing — the work-hours and
+                  // the contingency/overheads/profit build-up stay internal.
                   if (l.costing) {
                     return (
                       <div key={i} className="rounded-lg border border-navy-200 bg-navy-50/50 px-3 py-2 space-y-1.5">
                         <div className="flex items-start justify-between gap-3">
                           <div className="min-w-0">
-                            <p className="text-sm font-semibold leading-snug text-navy-700">{numbers[i]}. Costing</p>
-                            <p className="text-[11px] text-faint mt-0.5">Priced from the Costing tab; each activity and markup below appears as its own line.</p>
+                            <p className="text-sm font-semibold leading-snug text-navy-700">{numbers[i]}. {COSTING_LINE.item}</p>
+                            <p className="text-[11px] text-faint mt-0.5">Priced from the Costing tab — one line at the Suggested Pricing; the activity and markup build-up is not shown to the client.</p>
                           </div>
                           {costingSummary.hasSheet ? (
                             <p className="text-sm font-semibold tabular-nums text-navy-700 whitespace-nowrap pt-0.5">{formatCurrencyFull(costingSummary.amount, currency)}</p>
@@ -481,26 +482,6 @@ export function ProposalCostingTab({ proposalId }: { proposalId: string }) {
                             onChange={(e) => setLine(i, "timeline", e.target.value)}
                           />
                         </div>
-                        {costingSummary.hasSheet && (
-                          <div className="pl-3 border-l-2 border-navy-200 space-y-1">
-                            {costingActivities.map((a, k) => (
-                              <div key={`a${k}`} className="flex items-baseline justify-between gap-3 text-xs">
-                                <span className="text-ink min-w-0">
-                                  {a.name || "Professional fee"}
-                                </span>
-                                <span className="tabular-nums text-muted whitespace-nowrap">{formatCurrencyFull(a.amount, currency)}</span>
-                              </div>
-                            ))}
-                            {costingMarkups.map((m, k) => (
-                              <div key={`m${k}`} className="flex items-baseline justify-between gap-3 text-xs">
-                                <span className="text-muted">
-                                  {m.item}
-                                </span>
-                                <span className="tabular-nums text-muted whitespace-nowrap">{formatCurrencyFull(m.amount, currency)}</span>
-                              </div>
-                            ))}
-                          </div>
-                        )}
                       </div>
                     );
                   }
@@ -541,7 +522,7 @@ export function ProposalCostingTab({ proposalId }: { proposalId: string }) {
                   <p className="text-lg font-bold font-display tabular-nums text-ink">{formatCurrencyFull(previewTotal, currency)}</p>
                 </div>
               </div>
-              <p className="text-xs text-faint mt-1">Amounts are in {currency}. Typed prices are used verbatim; the Costing line is the Suggested Pricing from the Costing tab.</p>
+              <p className="text-xs text-faint mt-1">Amounts are in {currency}. Typed prices are used verbatim; the {COSTING_LINE.item} line is the Suggested Pricing from the Costing tab. The proposal prints one line per work package — delay events are rolled into the Delay Analysis total, and the fee build-up is not shown to the client.</p>
             </div>
 
             {/* Extra guidance */}

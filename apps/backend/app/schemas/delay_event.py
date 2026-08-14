@@ -8,10 +8,27 @@ class ChronologyItem(BaseModel):
 
     id: str
     date: str = ""
+    # When the step concluded — equal to `date` for a single-day step. Drives the
+    # Gantt bars in the Chronology tab's timeline view.
+    endDate: str = ""
     actor: str = "Contractor"
     title: str = ""
     detail: Optional[str] = None
     sourceId: Optional[str] = None
+
+
+class ChronologyNarrative(BaseModel):
+    """The submission-style write-up that frames an event's dated chronology.
+
+    Mirrors the sections of a claim narrative: what the event concerns, how it ran
+    from commencement to closure, its cause and effect, and the contractual basis
+    of the entitlement claimed.
+    """
+
+    introduction: str = ""
+    timeline: str = ""
+    causeEffect: str = ""
+    entitlement: str = ""
 
 
 class DelayEventSource(BaseModel):
@@ -39,6 +56,7 @@ class DelayEventBase(BaseModel):
     aiConfidence: int = 0
     reviewStatus: str = "Pending"
     chronology: List[ChronologyItem] = []
+    chronologyNarrative: Optional[ChronologyNarrative] = None
     sources: List[DelayEventSource] = []
 
 
@@ -66,6 +84,7 @@ class DelayEventUpdate(BaseModel):
     aiConfidence: Optional[int] = None
     reviewStatus: Optional[str] = None
     chronology: Optional[List[ChronologyItem]] = None
+    chronologyNarrative: Optional[ChronologyNarrative] = None
     sources: Optional[List[DelayEventSource]] = None
 
 

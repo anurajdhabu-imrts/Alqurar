@@ -64,5 +64,10 @@ export function useChronologyGenerator(
 
   const isRunning = status === "running" || start.isPending;
   const error = status === "failed" ? statusQ.data?.error || "AI chronology generation failed." : "";
-  return { isRunning, error, start: () => start.mutate() };
+  // Events are written in batches, so a long run can report how far it has got.
+  const progress =
+    isRunning && statusQ.data?.total
+      ? { done: statusQ.data.done ?? 0, total: statusQ.data.total }
+      : null;
+  return { isRunning, error, progress, start: () => start.mutate() };
 }

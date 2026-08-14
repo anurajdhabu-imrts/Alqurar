@@ -26,7 +26,7 @@ from app.schemas.project_clause import (
     ProjectClauseUpdate,
 )
 from app.services import clause_extraction, contract_book_service, pcc_comparison
-from app.services.document_service import create_document, next_document_id
+from app.services.document_service import SELF_ID, create_document_with_next_id
 from app.services.project_clause_service import (
     add_clause,
     delete_clause,
@@ -117,9 +117,7 @@ async def upload_contract_for_clauses(
     If the Anthropic key isn't set, the contract is saved and the response says so.
     """
     content = await file.read()
-    doc_id = next_document_id()
     record = {
-        "id": doc_id,
         "projectId": project_id,
         "name": file.filename or "contract",
         "type": _doc_type(file.filename or ""),
@@ -129,11 +127,11 @@ async def upload_contract_for_clauses(
         "status": "Uploaded",
         "claimRef": "Contract",
         "note": "Uploaded for clause extraction",
-        "driveFileId": doc_id,
+        "driveFileId": SELF_ID,
         "data": content,
         "mime": file.content_type or "application/octet-stream",
     }
-    create_document(record)
+    doc_id = create_document_with_next_id(record)["id"]
 
     if not os.getenv("ANTHROPIC_API_KEY"):
         return {
@@ -220,9 +218,7 @@ async def upload_pcc(
         )
 
     content = await file.read()
-    doc_id = next_document_id()
     record = {
-        "id": doc_id,
         "projectId": project_id,
         "name": file.filename or "particular-conditions",
         "type": _doc_type(file.filename or ""),
@@ -232,11 +228,11 @@ async def upload_pcc(
         "status": "Uploaded",
         "claimRef": "Particular Conditions",
         "note": "Uploaded for PCC comparison",
-        "driveFileId": doc_id,
+        "driveFileId": SELF_ID,
         "data": content,
         "mime": file.content_type or "application/octet-stream",
     }
-    create_document(record)
+    doc_id = create_document_with_next_id(record)["id"]
 
     if not os.getenv("ANTHROPIC_API_KEY"):
         return {

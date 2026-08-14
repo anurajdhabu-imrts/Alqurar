@@ -2,12 +2,29 @@
 client is visible to the admin in the project workspace, across browsers/devices.
 The actual file bytes are stored in the `data` column so uploads persist and can
 be downloaded again."""
+import threading
 import uuid
 from datetime import datetime, timezone
 from typing import Dict, List, Optional, Tuple
 
+from sqlalchemy.exc import IntegrityError
+
 from app.db import SessionLocal
 from app.models import Document, DocumentComment
+
+# Serialises "read the highest id, then insert" so two overlapping uploads can
+# never be handed the same doc-N. See create_document_with_next_id.
+_id_lock = threading.Lock()
+
+# How many times to re-allocate an id that lost a race to another process before
+# giving up (a single retry is normally enough; several means real contention).
+_ID_RETRIES = 10
+
+# Callers that store the file bytes on the row itself use the document's own id
+# as the "a downloadable file is stored" marker — but that id isn't known until
+# it has been allocated. Pass this sentinel as driveFileId and
+# create_document_with_next_id swaps it for the real id at insert time.
+SELF_ID = "__self__"
 
 
 def list_by_project(project_id: str) -> List[Dict]:
@@ -51,22 +68,49 @@ def get_documents_meta(document_ids: List[str]) -> Dict[str, Dict]:
     }
 
 
-def next_document_id() -> str:
-    """Return the next sequential document id: doc-1, doc-2, doc-3, ...
+def _highest_doc_number(db) -> int:
+    """The highest existing doc-N sequence number, using an open session."""
+    highest = 0
+    for (doc_id,) in db.query(Document.id).all():
+        if doc_id and doc_id.startswith("doc-"):
+            suffix = doc_id[4:]
+            # Ignore legacy timestamp ids (13-digit ms) — only count real
+            # sequence numbers so they don't poison the counter.
+            if suffix.isdigit() and int(suffix) < 1_000_000:
+                highest = max(highest, int(suffix))
+    return highest
 
-    Looks at the highest existing doc-N number and adds 1, so ids stay short and
-    readable instead of timestamp-based. Non-numeric/legacy ids are ignored.
+
+def create_document_with_next_id(data: Dict) -> Dict:
+    """Insert a new document, allocating its sequential id atomically.
+
+    Uploads used to read the highest id in one transaction and insert in another.
+    Two uploads overlapping in that window both read the same highest id, and
+    because create_document upserts by id, the second silently overwrote the
+    first — selecting five files could leave three rows, with no error anywhere.
+    Allocating and inserting under one lock closes that window; an id that still
+    loses a race (a second worker process) retries with a fresh number rather
+    than clobbering the row that got there first.
     """
-    with SessionLocal() as db:
-        highest = 0
-        for (doc_id,) in db.query(Document.id).all():
-            if doc_id and doc_id.startswith("doc-"):
-                suffix = doc_id[4:]
-                # Ignore legacy timestamp ids (13-digit ms) — only count real
-                # sequence numbers so they don't poison the counter.
-                if suffix.isdigit() and int(suffix) < 1_000_000:
-                    highest = max(highest, int(suffix))
-        return f"doc-{highest + 1}"
+    payload = dict(data)
+    # Resolved once: a retry re-stamps both fields, so checking the sentinel
+    # again after it has already been replaced would leave a stale id behind.
+    mirror_drive_id = payload.get("driveFileId") == SELF_ID
+    for _ in range(_ID_RETRIES):
+        with _id_lock, SessionLocal() as db:
+            doc_id = f"doc-{_highest_doc_number(db) + 1}"
+            payload["id"] = doc_id
+            if mirror_drive_id:
+                payload["driveFileId"] = doc_id
+            d = Document(**payload)
+            db.add(d)
+            try:
+                db.commit()
+            except IntegrityError:
+                db.rollback()
+                continue
+            return d.to_dict()
+    raise RuntimeError("Could not allocate a free document id — too many concurrent uploads.")
 
 
 def list_with_data(project_id: str) -> List[Tuple[str, str, str, Optional[bytes]]]:

@@ -9,7 +9,9 @@ from fastapi.responses import StreamingResponse
 from app.schemas.document import CommentIn, CommentOut, DocumentIn, DocumentOut
 from app.services.document_service import (
     add_comment,
+    SELF_ID,
     create_document,
+    create_document_with_next_id,
     delete_comment,
     delete_document,
     get_document,
@@ -17,7 +19,6 @@ from app.services.document_service import (
     list_by_project,
     list_comments,
     list_pending_ids,
-    next_document_id,
     set_analysis_status,
     update_comment,
 )
@@ -71,7 +72,6 @@ async def upload_document(
     should_analyze = bool(os.getenv("ANTHROPIC_API_KEY")) and analyze and not is_client
 
     content = await file.read()
-    doc_id = next_document_id()  # short sequential id: doc-1, doc-2, ...
 
     # ── Google Drive storage (ON HOLD) ────────────────────────────────────────
     # Re-enable this block (and remove the database `data`/`mime` lines below)
@@ -85,7 +85,8 @@ async def upload_document(
     # ──────────────────────────────────────────────────────────────────────────
 
     record = {
-        "id": doc_id,
+        # The id is allocated inside create_document_with_next_id, in the same
+        # atomic step as the insert — see the note there.
         "projectId": projectId,
         "name": file.filename or "file",
         "type": _doc_type(file.filename or ""),
@@ -98,7 +99,7 @@ async def upload_document(
         # Reuse driveFileId as the "downloadable file is stored" marker so the
         # frontend keeps showing its download button. Bytes live in `data`.
         # For Drive, set this to `drive_id` instead.
-        "driveFileId": doc_id,
+        "driveFileId": SELF_ID,
         "data": content,
         "mime": file.content_type or "application/octet-stream",
     }
@@ -106,11 +107,11 @@ async def upload_document(
         record["analysisStatus"] = "pending"
     # Inserting the file bytes is blocking and the file can be large — keep it off
     # the event loop so concurrent requests (e.g. login) stay responsive.
-    saved = await asyncio.to_thread(create_document, record)
+    saved = await asyncio.to_thread(create_document_with_next_id, record)
 
     # Analyse in the background — the response returns now, not after the model call.
     if should_analyze:
-        background.add_task(run_analysis, doc_id)
+        background.add_task(run_analysis, saved["id"])
     return saved
 
 

@@ -10,6 +10,7 @@ import {
   Building2,
   FileSignature,
   FolderKanban,
+  GanttChartSquare,
   LayoutDashboard,
   Library,
   Settings,
@@ -39,6 +40,9 @@ const sections: { heading: string; items: NavItem[] }[] = [
       { to: "/", label: "Dashboard", icon: LayoutDashboard, end: true },
       { to: "/proposals", label: "Proposals", icon: FileSignature },
       { to: "/projects", label: "Projects", icon: FolderKanban },
+      // Standalone chronology tool — upload documents, get the delay-event
+      // chronology and its Gantt timelines without setting up a full project.
+      { to: "/chronology-gantt", label: "Chronology Gantt", icon: GanttChartSquare },
     ],
   },
   {

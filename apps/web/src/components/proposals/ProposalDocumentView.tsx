@@ -1,6 +1,8 @@
 import type { ClientProposal } from "@/api/clientProposals";
 import { formatCurrencyFull } from "@/lib/utils";
 import { displayDescription, rowNumbers } from "@/lib/proposalCosting";
+import { tocEntries } from "@/lib/proposalToc";
+import { ProposalBody } from "@/components/proposals/ProposalBody";
 
 type Content = NonNullable<ClientProposal["content"]>;
 
@@ -19,9 +21,15 @@ export function ProposalDocumentView({
   const showTimeline = content.costing.some((c) => c.timeline?.trim());
   const totalCols = showTimeline ? 4 : 3;
   const numbers = rowNumbers(content.costing);
+  // Derived from the document, so the contents can never drift from the headings.
+  // On screen an entry scrolls to its section; the PDF prints page numbers instead.
+  const toc = tocEntries(content);
+  const headingId = (no: number) => `proposal-section-${no}`;
+  const goTo = (no: number) =>
+    document.getElementById(headingId(no))?.scrollIntoView({ behavior: "smooth", block: "start" });
 
   return (
-    <article className="px-6 py-6 sm:px-10 sm:py-8 max-w-3xl mx-auto">
+    <article className="doc px-6 py-6 sm:px-10 sm:py-8 max-w-3xl mx-auto">
       <header className="border-b border-border pb-4 mb-6">
         <div className="flex items-center justify-between gap-4 mb-4">
           {clientLogo ? (
@@ -39,20 +47,53 @@ export function ProposalDocumentView({
         )}
       </header>
 
-      <div className="space-y-6">
+      {toc.length > 1 && (
+        <nav aria-label="Table of contents" className="mb-8">
+          <h2 className="mb-2.5 pb-1 border-b border-border/70 text-[13px] font-bold uppercase tracking-wide text-maroon">
+            Table of Contents
+          </h2>
+          <ol className="space-y-0.5">
+            {toc.map((e) => (
+              <li key={e.no}>
+                <button
+                  type="button"
+                  onClick={() => goTo(e.no)}
+                  className="w-full text-left text-[13.5px] leading-[1.9] text-ink/90 hover:text-navy-700 hover:underline underline-offset-4"
+                >
+                  <span className="tabular-nums text-faint mr-2">{e.no}.</span>
+                  {e.title}
+                </button>
+              </li>
+            ))}
+          </ol>
+        </nav>
+      )}
+
+      {/* Narrative sections, in the order the template defines them — the
+          commercial table and payment terms follow the last one (Terms &
+          Conditions), matching the issued document. */}
+      <div className="space-y-8">
         {content.sections.map((s, i) => (
           <section key={i}>
-            <h2 className="text-sm font-semibold uppercase tracking-wide text-navy-700 mb-1.5">
+            <h2
+              id={headingId(i + 1)}
+              className="mb-2.5 pb-1 border-b border-border/70 text-[13px] font-bold uppercase tracking-wide text-maroon scroll-mt-4"
+            >
               {i + 1}. {s.heading}
             </h2>
-            <p className="text-sm text-ink/90 leading-relaxed whitespace-pre-wrap">{s.body}</p>
+            <ProposalBody body={s.body} />
           </section>
         ))}
       </div>
 
       {content.costing.length > 0 && (
-        <section className="mt-8">
-          <h2 className="text-sm font-semibold uppercase tracking-wide text-navy-700 mb-3">Commercial Proposal</h2>
+        <section className="mt-10">
+          <h2
+            id={headingId(content.sections.length + 1)}
+            className="mb-3 pb-1 border-b border-border/70 text-[13px] font-bold uppercase tracking-wide text-maroon scroll-mt-4"
+          >
+            {content.sections.length + 1}. Commercial Proposal
+          </h2>
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
               <thead>
@@ -77,7 +118,8 @@ export function ProposalDocumentView({
                     <td className="py-2.5 px-3 text-muted">{displayDescription(c.description)}</td>
                     {/* A group header is priced by the sub-lines beneath it, so it shows no
                         amount of its own — repeating the subtotal here reads as double-counting. */}
-                    {showTimeline && <td className="py-2.5 px-3 text-muted whitespace-nowrap">{c.group ? "" : c.timeline || "—"}</td>}
+                    {/* An unfilled timeline is left blank, not dashed — the PDF does the same. */}
+                    {showTimeline && <td className="py-2.5 px-3 text-muted whitespace-nowrap">{c.group ? "" : c.timeline || ""}</td>}
                     <td className="py-2.5 pl-3 text-right tabular-nums text-ink whitespace-nowrap">
                       {c.group ? "" : formatCurrencyFull(c.amount, content.currency)}
                     </td>
@@ -96,12 +138,14 @@ export function ProposalDocumentView({
           </div>
 
           {content.paymentTerms && content.paymentTerms.length > 0 && (
-            <div className="mt-5">
-              <h3 className="text-xs font-semibold uppercase tracking-wide text-faint mb-2">Payment Terms</h3>
-              <ul className="space-y-1.5">
+            <div className="mt-6">
+              <h3 className="mb-2 text-[12px] font-semibold text-maroon underline decoration-maroon/30 underline-offset-4">
+                Payment Terms
+              </h3>
+              <ul className="space-y-2">
                 {content.paymentTerms.map((t, i) => (
-                  <li key={i} className="flex gap-2 text-sm text-ink/90">
-                    <span className="text-navy-400 mt-1.5 size-1.5 rounded-full bg-navy-300 shrink-0" />
+                  <li key={i} className="flex gap-2.5 text-[13.5px] leading-[1.75] text-ink/90">
+                    <span className="mt-[9px] size-1.5 shrink-0 rounded-full bg-navy-400" />
                     <span>{t}</span>
                   </li>
                 ))}
@@ -111,8 +155,9 @@ export function ProposalDocumentView({
         </section>
       )}
 
-      <p className="mt-8 pt-4 border-t border-border text-[11px] text-faint">
-        Prepared by Al Qarar Management Solutions.
+      <p className="mt-10 pt-4 border-t border-border text-center text-[10.5px] leading-relaxed text-faint">
+        This document is the sole property of Al Qarar Management Solutions. Any unauthorized use,
+        reproduction, or distribution of this document is strictly prohibited.
       </p>
     </article>
   );

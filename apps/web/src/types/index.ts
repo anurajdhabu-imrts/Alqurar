@@ -140,13 +140,35 @@ export interface DelayEventSource {
 /** One step in an event's correspondence chronology. */
 export interface ChronologyItem {
   id: string;
-  /** ISO date. */
+  /** ISO date the step occurred (or began). */
   date: string;
+  /**
+   * ISO date the step concluded — equal to `date` for a single-day event, later
+   * for one that ran over a period. Drives the Gantt bars; absent on chronology
+   * generated before end dates were captured.
+   */
+  endDate?: string;
   actor: "Contractor" | "Engineer" | "Employer" | "System";
   title: string;
   detail?: string;
   /** Links back to a DelayEventSource.id. */
   sourceId?: string;
+}
+
+/**
+ * The submission-style write-up that frames an event's dated chronology — the
+ * sections a claims consultant puts around it in an EOT submission. Written by
+ * the AI chronology generator; absent until the event has been generated.
+ */
+export interface ChronologyNarrative {
+  /** What the event concerns and the Contractor's overall position. */
+  introduction: string;
+  /** The event narrated from commencement to closure ("Delay Event Timeline"). */
+  timeline: string;
+  /** The primary cause traced through to its effect on the Works. */
+  causeEffect: string;
+  /** The sub-clauses relied on for time and cost, and notice compliance. */
+  entitlement: string;
 }
 
 /** A richer, reviewable delay event extracted from the data room. */
@@ -172,6 +194,7 @@ export interface ProjectDelayEvent {
   aiConfidence: number;
   reviewStatus: DelayReviewStatus;
   chronology: ChronologyItem[];
+  chronologyNarrative?: ChronologyNarrative | null;
   sources: DelayEventSource[];
 }
 

@@ -22,7 +22,7 @@ function ClientProposalCard({ proposal }: { proposal: ProjectDetails }) {
     try {
       const { downloadProposalPdf, fetchAsDataUrl } = await import("@/lib/proposalPdf");
       const alqararLogo = await fetchAsDataUrl("/Al Qarar Logo.png");
-      downloadProposalPdf(content, {
+      await downloadProposalPdf(content, {
         clientLogo: data?.inputs?.logo,
         alqararLogo,
         clientCompany: data?.inputs?.clientCompany || proposal.employer,

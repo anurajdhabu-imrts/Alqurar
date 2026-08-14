@@ -65,6 +65,7 @@ def init_db() -> None:
         conn.execute(text('ALTER TABLE project_clauses ADD COLUMN IF NOT EXISTS "base_description" TEXT'))
         conn.execute(text('ALTER TABLE project_clauses ADD COLUMN IF NOT EXISTS "interpretation" TEXT'))
         conn.execute(text('ALTER TABLE projects ADD COLUMN IF NOT EXISTS "clauseBookId" VARCHAR'))
+        conn.execute(text('ALTER TABLE delay_events ADD COLUMN IF NOT EXISTS "chronologyNarrative" JSONB'))
         conn.execute(text('ALTER TABLE document_comments ADD COLUMN IF NOT EXISTS "anchorText" TEXT'))
         conn.execute(text('ALTER TABLE document_comments ADD COLUMN IF NOT EXISTS "anchorStart" INTEGER'))
         conn.execute(text('ALTER TABLE document_comments ADD COLUMN IF NOT EXISTS "anchorLength" INTEGER'))

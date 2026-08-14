@@ -13,13 +13,15 @@ export interface UploadArgs {
   uploadedBy: string;
 }
 
-/** Upload the real file — backend streams it to Google Drive and saves the record. */
+/** Upload the real file — the backend stores its bytes and saves the record.
+ *  Overrides the client's default 15s timeout: a large file, or several uploading
+ *  at once, comfortably exceeds it and would otherwise be dropped mid-flight. */
 export async function uploadProjectDocApi({ file, projectId, uploadedBy }: UploadArgs): Promise<UploadedClaimDocument> {
   const form = new FormData();
   form.append("file", file);
   form.append("projectId", projectId);
   form.append("uploadedBy", uploadedBy);
-  const { data } = await api.post("/project-documents/upload", form);
+  const { data } = await api.post("/project-documents/upload", form, { timeout: 300_000 });
   return data;
 }
 

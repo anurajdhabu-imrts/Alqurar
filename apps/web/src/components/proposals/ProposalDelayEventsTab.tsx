@@ -1,13 +1,23 @@
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { AlertTriangle, ChevronDown, ListChecks, Loader2, Sparkles } from "lucide-react";
 import { Card } from "@/components/ui/Card";
 import { useDelayEvents, useDelayEventsExtractor } from "@/hooks/useDelayEvents";
+import { useProjectDocuments } from "@/hooks/useProjectDocuments";
+import type { ProjectDelayEvent } from "@/types";
 import { cn } from "@/lib/utils";
 
 /** An event's narrative as a clean description (whitespace normalised, not cut). */
 function description(text: string): string {
   const clean = (text || "").replace(/\s+/g, " ").trim();
   return clean || "No description available.";
+}
+
+/** Lookup keys for a filename — normalised, with and without its extension — so a
+ *  source cited by name still matches an uploaded document. */
+function nameKeys(name: string): string[] {
+  const full = (name || "").toLowerCase().replace(/\s+/g, " ").trim();
+  const base = full.replace(/\.[a-z0-9]{1,5}$/, "");
+  return base && base !== full ? [full, base] : [full];
 }
 
 /**
@@ -17,10 +27,34 @@ function description(text: string): string {
  */
 export function ProposalDelayEventsTab({ proposalId }: { proposalId: string }) {
   const { data: events = [], isLoading } = useDelayEvents(proposalId);
+  const { data: docs = [], isLoading: docsLoading } = useProjectDocuments(proposalId);
   const extract = useDelayEventsExtractor(proposalId, !isLoading, events.length);
   const [openId, setOpenId] = useState<string | null>(null);
 
   const toggle = (id: string) => setOpenId((cur) => (cur === id ? null : id));
+
+  // Every uploaded document, by id and by filename.
+  const docKeys = useMemo(() => {
+    const keys = new Set<string>();
+    for (const d of docs) {
+      keys.add(d.id);
+      for (const k of nameKeys(d.name)) keys.add(k);
+    }
+    return keys;
+  }, [docs]);
+
+  /**
+   * True when none of an event's cited sources resolve to a document in the data
+   * room — the AI identified the event from context but the evidence for it was
+   * never uploaded, so the analyst has to supply it.
+   */
+  const unevidenced = (e: ProjectDelayEvent) =>
+    !docsLoading &&
+    !(e.sources ?? []).some(
+      (s) => docKeys.has(s.id) || nameKeys(s.name).some((k) => docKeys.has(k)),
+    );
+
+  const unevidencedCount = events.filter(unevidenced).length;
 
   function handleExtract() {
     if (
@@ -89,10 +123,19 @@ export function ProposalDelayEventsTab({ proposalId }: { proposalId: string }) {
         </Card>
       ) : (
         <>
-          <p className="text-xs text-muted">{events.length} delay event{events.length === 1 ? "" : "s"} identified</p>
+          <p className="text-xs text-muted">
+            {events.length} delay event{events.length === 1 ? "" : "s"} identified
+            {unevidencedCount > 0 && (
+              <span className="text-warning">
+                {" · "}
+                {unevidencedCount} without a supporting document
+              </span>
+            )}
+          </p>
           <div className="space-y-2.5">
             {events.map((e, i) => {
               const open = openId === e.id;
+              const missingDoc = unevidenced(e);
               return (
                 <Card key={e.id} className="p-0 overflow-hidden">
                   <button
@@ -101,14 +144,34 @@ export function ProposalDelayEventsTab({ proposalId }: { proposalId: string }) {
                     aria-expanded={open}
                     className="w-full flex items-center gap-3 p-4 text-left hover:bg-navy-50/50 transition-colors"
                   >
-                    <span className="size-8 shrink-0 rounded-lg bg-navy-100 text-navy-700 grid place-items-center text-sm font-semibold tabular-nums">
+                    <span
+                      className={cn(
+                        "size-8 shrink-0 rounded-lg grid place-items-center text-sm font-semibold tabular-nums",
+                        missingDoc ? "bg-warning-bg text-warning" : "bg-navy-100 text-navy-700",
+                      )}
+                    >
                       {i + 1}
                     </span>
                     <p className="min-w-0 flex-1 text-sm font-semibold text-ink leading-snug">{e.title}</p>
+                    {missingDoc && (
+                      <span className="shrink-0 inline-flex items-center gap-1 rounded-md bg-warning-bg px-2 py-0.5 text-[11px] font-semibold text-warning">
+                        <AlertTriangle className="size-3" /> No document
+                      </span>
+                    )}
                     <ChevronDown
                       className={cn("size-4 shrink-0 text-faint transition-transform", open && "rotate-180")}
                     />
                   </button>
+                  {missingDoc && (
+                    <div className="mx-4 mb-4 flex items-start gap-2 rounded-lg bg-warning-bg/60 px-3 py-2.5 text-xs text-warning">
+                      <AlertTriangle className="size-4 shrink-0 mt-px" />
+                      <span>
+                        New event identified — no supporting document was provided for it. Upload the
+                        correspondence or records evidencing this event in the Documents tab, then
+                        re-run “Identify with AI”.
+                      </span>
+                    </div>
+                  )}
                   {open && (
                     <div className="px-4 pb-4 pl-15">
                       <p className="text-sm text-muted leading-relaxed">{description(e.narrative)}</p>

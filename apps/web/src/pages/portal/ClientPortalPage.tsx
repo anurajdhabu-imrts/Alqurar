@@ -107,7 +107,7 @@ function MyProposalSection({ token }: { token: string }) {
       const { downloadProposalPdf, fetchAsDataUrl } = await import("@/lib/proposalPdf");
       const alqararLogo = await fetchAsDataUrl("/Al Qarar Logo.png");
       const content = data.content as Parameters<typeof downloadProposalPdf>[0];
-      downloadProposalPdf(content, {
+      await downloadProposalPdf(content, {
         clientLogo: (data.inputs as Record<string, string>)?.logo,
         alqararLogo,
         clientCompany: (data.inputs as Record<string, string>)?.clientCompany,

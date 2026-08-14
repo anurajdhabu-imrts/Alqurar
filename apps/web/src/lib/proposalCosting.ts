@@ -1,4 +1,9 @@
-/** Shape of the costing rows the numbering works on (form lines or generated lines). */
+/** Shape of the costing rows the numbering works on (form lines or generated lines).
+ *
+ *  Groups and sub-lines exist only in the ADMIN form, where the delay events are
+ *  priced one by one. The generated proposal collapses each group into a single
+ *  priced row (see `_apply_admin_commercials`), so a generated document's costing
+ *  is a flat list — the client sees one figure per work package, not our build-up. */
 interface Row {
   /** A group header (e.g. "Delay Analysis"); its amount is the subtotal of its children. */
   group?: boolean;
@@ -10,7 +15,7 @@ interface Row {
 export const DELAY_GROUP_ITEM = "Delay Analysis";
 
 export const DELAY_GROUP_DESC =
-  "Event-by-event entitlement analysis of the delay events identified on the project, priced individually below.";
+  "Event-by-event entitlement analysis of the delay events identified on the project.";
 
 /** Sl.No labels — top-level rows are "1", "2", …; nested rows are "2.1", "2.2", …. */
 export function rowNumbers(rows: Row[]): string[] {
