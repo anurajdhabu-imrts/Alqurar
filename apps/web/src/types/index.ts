@@ -416,7 +416,7 @@ export interface Role {
 }
 
 // ── Document ingestion ────────────────────────────────────────────────────
-export type DocType = "PDF" | "DOCX" | "XLSX" | "P6 XML" | "MPP" | "Scan" | "Other";
+export type DocType = "PDF" | "DOCX" | "XLSX" | "P6 XML" | "MPP" | "Scan" | "ZIP" | "Other";
 
 /** AI classification + summary of an uploaded document. */
 export interface AnalyzedDocument {
