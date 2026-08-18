@@ -482,7 +482,8 @@ export interface UploadedClaimDocument {
   uploadedBy: string;
   claimRef?: string;
   note?: string;
-  status: "Uploaded" | "Under Review" | "Analysed";
+  /** "Unpacked": an archive whose contents were stored as documents of their own. */
+  status: "Uploaded" | "Under Review" | "Analysed" | "Unpacked";
   /** Google Drive file id once the file is stored. */
   driveFileId?: string;
   /** Cached AI analysis, present once the file has been analysed in the data room. */

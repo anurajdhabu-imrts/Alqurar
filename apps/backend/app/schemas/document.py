@@ -25,6 +25,13 @@ class DocumentOut(DocumentIn):
     # Cached AI analysis (DocumentAnalysis shape), present once the file has been
     # analysed in the data room.
     analysis: Optional[dict] = None
+    # Background-analysis lifecycle ("pending"/"analyzing"/"done"/"failed"). The
+    # data room polls on this to show progress, so it must survive serialisation —
+    # a response model drops anything it doesn't declare.
+    # Optional, not `str`: rows that predate the column read back as NULL and must
+    # not fail validation.
+    analysisStatus: Optional[str] = ""
+    analysisError: Optional[str] = None
 
 
 class CommentIn(BaseModel):

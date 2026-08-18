@@ -1418,50 +1418,130 @@ async def interpret_modifications(
 # events and data-room documents, following the standard claim structure.
 
 _CLAIM_SYSTEM_PROMPT = (
-    "You are a senior forensic delay analyst drafting a formal Extension of Time "
-    "(EOT) claim document for a construction project under standards such as FIDIC, "
-    "NEC4 or CPWD. You are given the project details, the register of identified "
-    "delay events (with causes, dates, day impacts, narratives and chronologies), "
-    "and the list of supporting documents.\n\n"
-    "Write a complete, professional, submission-ready EOT claim in clearly titled "
-    "sections. Use formal, factual language and only rely on the information "
-    "provided — do NOT invent clause numbers, dates, parties or figures.\n\n"
-    "Produce these sections in order:\n"
-    "1. Project Description — brief description of the project and contract details.\n"
-    "2. Executive Summary of Claim — concise summary and total EOT sought.\n"
-    "3. Contractual Basis of the Claim — cite the relevant contract clauses and the "
-    "parties' obligations that support entitlement.\n"
-    "4. Detailed Claim Description and Background — for each delay event: a narrative, "
-    "the chronology of events, the supporting evidence (reference the documents), and "
-    "the impact on the works.\n"
-    "5. Delay Analysis — schedule impact, critical-path impact, and delay "
-    "apportionment (excusable vs culpable) across the parties.\n"
-    "6. Conclusion — summary of the claim and the requested relief (the extension of "
-    "time sought, and any associated cost where evidenced).\n"
-    "7. Attachments — the list of supporting documents referenced.\n\n"
-    "Each section's 'body' is plain text; use blank lines between paragraphs and "
-    "'- ' for bullet points. If the events register is empty or thin, say so plainly "
-    "in the Executive Summary rather than fabricating content."
+    "You are a senior forensic delay analyst at Al Qarar Management Solutions "
+    "(AQMS) drafting a formal, submission-ready Extension of Time (EOT) claim for a "
+    "construction project under a standard form such as FIDIC, NEC4 or CPWD.\n\n"
+    "You are given the project and contract particulars, the delay-events register "
+    "(causes, dates, day impacts, narratives, per-event chronologies and sources), "
+    "the project's Clause Library, the admissibility assessment, the selected delay "
+    "analysis methodology, the queries/RFI register, and the data-room document "
+    "schedule. Use ALL of it — every section below must be grounded in that data.\n\n"
+    "ABSOLUTE RULE — never invent. Do not fabricate clause numbers, dates, parties, "
+    "programme dates, quantities or figures. Every clause citation must come from the "
+    "Clause Library or a delay event's `clause`. Every date must come from the data. "
+    "Where the data does not support a section, say so plainly in that section "
+    "(e.g. 'The Contractor's records supplied to date do not evidence X') rather than "
+    "filling the gap. A thin register produces a short claim, not an embellished one.\n\n"
+    "STRUCTURE — produce these numbered top-level sections, in this order, each with "
+    "the listed subsections. Omit a subsection only when it has no data at all.\n"
+    "1. ABBREVIATIONS — a table of the abbreviations actually used in this document.\n"
+    "2. DEFINITIONS — a table defining the contractual terms actually used.\n"
+    "3. INTRODUCTION — subsections: Summary of Delay Events (table: Ref, Event, "
+    "Cause/Party, Period, Days Impact, Critical); Summary of Relief Sought; Framework "
+    "of the Submission; Purpose of the Submission; Reservation of Rights.\n"
+    "4. THE PROJECT AND THE CONTRACT — subsections: Parties to the Contract; The "
+    "Contract Agreement; Salient Features of the Contract (table of the contract "
+    "particulars supplied); Programme (baseline and any submissions evidenced).\n"
+    "5. DELAY AND DISRUPTION TO THE PROGRESS — the factual narrative of how the works "
+    "were delayed, built from the per-event chronologies in date order.\n"
+    "6. CONTRACTUAL ENTITLEMENT TO EXTENSION OF TIME — the entitlement argument built "
+    "on the Clause Library, including a Key Contractual Clauses table (Clause, Title, "
+    "Effect/Relevance). Where a clause is marked modified by a PCC amendment, address "
+    "the amended wording and its interpretation.\n"
+    "7. DELAY EVENTS — one subsection PER delay event, headed '<ref> — <title>', each "
+    "covering: the factual narrative; the chronology (as a table: Date, Actor, Event); "
+    "the contractual basis citing that event's clause; the supporting evidence naming "
+    "the source documents; and the assessed time impact with its admissibility.\n"
+    "8. DELAY ANALYSIS METHODOLOGY — the methodology selected for this project, why it "
+    "suits the available records, and how it is applied. Use the supplied methodology "
+    "assessment; do not assert a method the assessment does not support.\n"
+    "9. WINDOW PERIODS AND TIME IMPACT ANALYSIS — this project has no parsed baseline "
+    "or updated programme, so a windowed Time Impact Analysis CANNOT be performed. "
+    "Emit exactly one block of type 'note' stating that the windowed TIA, the "
+    "impacted-programme tables and the milestone completion dates require the baseline "
+    "and updated programmes (P6 XER / P6 XML / MS Project) to be loaded and analysed, "
+    "and that this section is to be completed once that analysis is available. Do NOT "
+    "estimate window impacts or completion dates.\n"
+    "10. QUERIES AND REQUESTS FOR INFORMATION — the RFI register as a table (Date, "
+    "Query, Response, Date of Response, Status), and what any open queries mean for "
+    "this submission.\n"
+    "11. SUMMARY AND RELIEF SOUGHT — the consolidated position: total days claimed, "
+    "the split between excusable and culpable delay as evidenced, and the relief "
+    "requested. State clearly that the total is the sum of the assessed event impacts "
+    "and is subject to the windowed TIA in section 9.\n"
+    "12. SCHEDULE OF ATTACHMENTS — a table of the supporting documents relied upon.\n\n"
+    "WRITING — formal, factual, third-person, in the register of a contractual "
+    "submission. Refer to 'the Contractor', 'the Employer', 'the Engineer'. Number "
+    "sections '1', '2' and subsections '1.1', '1.2'. Prefer a table wherever the "
+    "content is a register or a set of particulars; prose is for argument, not lists "
+    "of facts. Keep every table's `columns` and each row the same length."
 )
+
+# Two levels of nesting only (section → subsection). Structured outputs reject
+# recursive schemas, so the depth is spelled out rather than self-referenced.
+#
+# Each block variant is a fully-specified object rather than one loose shape with
+# optional keys: structured outputs require `additionalProperties: false` on every
+# object and only guarantee the keys named in `required`, so a discriminated
+# `anyOf` union is what reliably round-trips.
+def _block_variant(kind: str, **props) -> dict:
+    return {
+        "type": "object",
+        "properties": {"type": {"const": kind}, **props},
+        "required": ["type", *props],
+        "additionalProperties": False,
+    }
+
+
+_STRING_LIST = {"type": "array", "items": {"type": "string"}}
+
+_CLAIM_BLOCK_SCHEMA = {
+    "anyOf": [
+        _block_variant("paragraph", text={"type": "string"}),
+        _block_variant("note", text={"type": "string"}),
+        _block_variant("bullets", items=_STRING_LIST),
+        _block_variant(
+            "table",
+            caption={"type": "string"},
+            columns=_STRING_LIST,
+            rows={"type": "array", "items": _STRING_LIST},
+        ),
+    ]
+}
 
 _CLAIM_OUTPUT_SCHEMA = {
     "type": "object",
     "properties": {
         "title": {"type": "string"},
+        "reference": {"type": "string"},
         "sections": {
             "type": "array",
             "items": {
                 "type": "object",
                 "properties": {
+                    "number": {"type": "string"},
                     "heading": {"type": "string"},
-                    "body": {"type": "string"},
+                    "blocks": {"type": "array", "items": _CLAIM_BLOCK_SCHEMA},
+                    "subsections": {
+                        "type": "array",
+                        "items": {
+                            "type": "object",
+                            "properties": {
+                                "number": {"type": "string"},
+                                "heading": {"type": "string"},
+                                "blocks": {"type": "array", "items": _CLAIM_BLOCK_SCHEMA},
+                            },
+                            "required": ["number", "heading", "blocks"],
+                            "additionalProperties": False,
+                        },
+                    },
                 },
-                "required": ["heading", "body"],
+                "required": ["number", "heading", "blocks", "subsections"],
                 "additionalProperties": False,
             },
         },
     },
-    "required": ["title", "sections"],
+    "required": ["title", "reference", "sections"],
     "additionalProperties": False,
 }
 
@@ -1493,13 +1573,91 @@ def _events_brief(events: list[dict]) -> str:
     return "\n".join(lines)
 
 
+def _clauses_brief(clauses: list[dict]) -> str:
+    """Render the project's Clause Library — the basis for the entitlement section."""
+    if not clauses:
+        return "(The project's Clause Library is empty — no clauses have been loaded.)"
+    lines = []
+    for c in clauses:
+        head = f"\n### {c.get('clause_number', '')} — {c.get('clause_title', '')}"
+        if c.get("modified"):
+            head += "  [MODIFIED BY PARTICULAR CONDITIONS]"
+        lines.append(head)
+        if c.get("modified") and c.get("base_description"):
+            lines.append(f"General Conditions wording: {c.get('base_description', '')}")
+            lines.append(f"As amended: {c.get('clause_description', '')}")
+            if c.get("modification_note"):
+                lines.append(f"Amendment: {c.get('modification_note')}")
+            if c.get("interpretation"):
+                lines.append(f"Interpretation: {c.get('interpretation')}")
+        else:
+            lines.append(f"Wording: {c.get('clause_description', '')}")
+        tags = c.get("tags") or []
+        if tags:
+            lines.append("Tags: " + ", ".join(str(t) for t in tags))
+    return "\n".join(lines)
+
+
+def _queries_brief(queries: list[dict]) -> str:
+    """Render the queries / RFI register."""
+    if not queries:
+        return "(No queries or RFIs have been raised on this project.)"
+    lines = []
+    for q in queries:
+        lines.append(
+            f"- RFI {q.get('dateOfRfi', '')} [{q.get('status', '')}] "
+            f"Subject: {q.get('eotDescription', '')} | "
+            f"Query: {q.get('queryDescription', '')} | "
+            f"Response: {q.get('responseFromGic', '') or '(none received)'} "
+            f"({q.get('dateOfResponse', '') or 'no date'}) | "
+            f"Remarks: {q.get('remarks', '')}"
+        )
+    return "\n".join(lines)
+
+
+def _documents_brief(documents: list[dict], limit: int = 200) -> str:
+    """Render the data-room schedule, including each document's AI classification."""
+    if not documents:
+        return "(No documents have been uploaded to the data room.)"
+    lines = []
+    for d in documents[:limit]:
+        line = f"- {d.get('name', '')} [{d.get('type', '')}]"
+        a = d.get("analysis") or {}
+        if a.get("document_type"):
+            line += f" — {a.get('document_type')}"
+        if a.get("summary"):
+            line += f": {a.get('summary')}"
+        lines.append(line)
+    if len(documents) > limit:
+        lines.append(f"(+{len(documents) - limit} further documents not listed)")
+    return "\n".join(lines)
+
+
+def _json_brief(label: str, payload, limit: int = 12000) -> str:
+    """Compactly serialise a stored assessment, truncated so one module can't
+    crowd out the rest of the prompt."""
+    if not payload:
+        return f"(No {label} is available for this project.)"
+    text = json.dumps(payload, ensure_ascii=False, separators=(",", ":"))
+    if len(text) > limit:
+        text = text[:limit] + f"… (truncated — {label} exceeds the prompt budget)"
+    return text
+
+
 async def generate_eot_claim(
     *,
     project: dict,
     events: list[dict],
-    document_names: list[str],
+    documents: list[dict],
+    clauses: list[dict] | None = None,
+    queries: list[dict] | None = None,
+    admissibility: dict | None = None,
+    methodology: dict | None = None,
 ) -> dict:
-    """Draft the full EOT claim document. Returns {title, sections:[{heading, body}]}."""
+    """Draft the full EOT claim document from every project module.
+
+    Returns {title, reference, sections:[{number, heading, blocks, subsections}]}.
+    """
     p = project or {}
     header = [
         f"Project: {p.get('name', '')}",
@@ -1509,20 +1667,31 @@ async def generate_eot_claim(
         f"Engineer: {p.get('engineer', '')}",
         f"Contractor: {p.get('contractor', '')}",
         f"Location: {p.get('location', '')}",
+        f"Contract value: {p.get('value', '')} {p.get('currency', '')}",
+        f"LOA / LPO reference: {p.get('loaRef', '')}",
         f"Commencement: {p.get('commencementDate', '')}",
         f"Baseline completion: {p.get('completionDate', '')}",
+        f"Time for completion (days): {p.get('timeForCompletionDays', '')}",
+        f"Data date: {p.get('dataDate', '')}",
+        f"Baseline programme: {p.get('baselineProgramme', '')}",
     ]
-    docs = "\n".join(f"- {n}" for n in document_names) or "(none)"
     user_content = (
-        "PROJECT DETAILS\n" + "\n".join(header)
+        "PROJECT AND CONTRACT PARTICULARS\n" + "\n".join(header)
         + "\n\nDELAY EVENTS REGISTER\n" + _events_brief(events)
-        + "\n\nSUPPORTING DOCUMENTS\n" + docs
+        + "\n\nPROJECT CLAUSE LIBRARY\n" + _clauses_brief(clauses or [])
+        + "\n\nADMISSIBILITY ASSESSMENT\n" + _json_brief("admissibility assessment", admissibility)
+        + "\n\nDELAY ANALYSIS METHODOLOGY ASSESSMENT\n"
+        + _json_brief("methodology assessment", methodology)
+        + "\n\nQUERIES / RFI REGISTER\n" + _queries_brief(queries or [])
+        + "\n\nDATA ROOM — SCHEDULE OF DOCUMENTS\n" + _documents_brief(documents or [])
+        + "\n\nNo baseline or updated programme has been parsed for this project, so "
+        "section 9 must be the 'note' placeholder described in your instructions."
         + "\n\nDraft the Extension of Time claim now."
     )
 
     async with _client().messages.stream(
         model=MODEL,
-        max_tokens=16000,
+        max_tokens=32000,
         thinking={"type": "adaptive"},
         system=[
             {"type": "text", "text": _CLAIM_SYSTEM_PROMPT, "cache_control": {"type": "ephemeral"}}

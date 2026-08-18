@@ -13,7 +13,15 @@ import anthropic
 
 from app.db import SessionLocal
 from app.models import EOTClaim
-from app.services import delay_event_service, document_service, project_service
+from app.services import (
+    admissibility_service,
+    delay_event_service,
+    document_service,
+    methodology_service,
+    project_clause_service,
+    project_query_service,
+    project_service,
+)
 from app.services.ai_service import MODEL, generate_eot_claim
 
 _sem = asyncio.Semaphore(int(os.getenv("CLAIM_CONCURRENCY", "2")))
@@ -54,12 +62,22 @@ def mark_running(project_id: str) -> None:
     _set(project_id, status="running", error=None)
 
 
-def _load(project_id: str):
-    """Blocking: gather project, events and document names (run in a thread)."""
-    project = project_service.get_project(project_id)
-    events = delay_event_service.list_by_project(project_id)
-    doc_names = [d.get("name", "") for d in document_service.list_by_project(project_id)]
-    return project, events, doc_names
+def _load(project_id: str) -> Dict:
+    """Blocking: gather every project module the claim is written from (run in a
+    thread). The report draws on the same data the workspace tabs show — delay
+    events, the Clause Library, admissibility, methodology, queries and the data
+    room — so a section is only thin when the underlying tab is."""
+    return {
+        "project": project_service.get_project(project_id),
+        "events": delay_event_service.list_by_project(project_id),
+        "documents": document_service.list_by_project(project_id),
+        "clauses": project_clause_service.list_by_project(project_id),
+        "queries": project_query_service.list_by_project(project_id),
+        # Stored assessments keep their status envelope; the claim only needs the
+        # analyst-reviewed content.
+        "admissibility": (admissibility_service.get(project_id) or {}).get("content"),
+        "methodology": methodology_service.get_assessment(project_id),
+    }
 
 
 async def run_generation(project_id: str) -> None:
@@ -70,14 +88,12 @@ async def run_generation(project_id: str) -> None:
             if not os.getenv("ANTHROPIC_API_KEY"):
                 _set(project_id, status="failed", error=_NOT_CONFIGURED)
                 return
-            project, events, doc_names = await asyncio.to_thread(_load, project_id)
-            if not project:
+            data = await asyncio.to_thread(_load, project_id)
+            if not data.get("project"):
                 _set(project_id, status="failed", error="Project not found.")
                 return
 
-            content = await generate_eot_claim(
-                project=project, events=events, document_names=doc_names
-            )
+            content = await generate_eot_claim(**data)
             _set(project_id, content=content, model=MODEL, status="done", error=None)
         except anthropic.AuthenticationError:
             _set(project_id, status="failed", error=_NOT_CONFIGURED)

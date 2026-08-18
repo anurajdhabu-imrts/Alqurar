@@ -17,7 +17,11 @@ export const CLIENT_UPLOAD_ACCEPT: Accept = {
   "image/*": [".png", ".jpg", ".jpeg", ".tif", ".tiff"],
   "application/zip": [".zip"],
   "application/x-zip-compressed": [".zip"],
+  "application/vnd.rar": [".rar"],
+  "application/x-rar-compressed": [".rar"],
+  "application/x-7z-compressed": [".7z"],
 };
 
 /** Small print under the drop zone — also reused in the validation message. */
-export const CLIENT_UPLOAD_HINT = "Upload claim documents (PDF, DOC, Images, or ZIP files)";
+export const CLIENT_UPLOAD_HINT =
+  "Upload claim documents (PDF, DOC, Images, or a ZIP/RAR/7z bundle — bundles are unpacked automatically)";

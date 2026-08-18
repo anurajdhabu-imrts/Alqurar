@@ -56,7 +56,7 @@ function typeFromName(name: string): DocType {
   if (ext === "xml") return "P6 XML";
   if (ext === "mpp") return "MPP";
   if (["png", "jpg", "jpeg", "tif", "tiff"].includes(ext)) return "Scan";
-  if (ext === "zip") return "ZIP";
+  if (["zip", "rar", "7z", "tar", "gz", "tgz"].includes(ext)) return "ZIP";
   return "Other";
 }
 
@@ -179,8 +179,8 @@ export function DocumentsPanel({
         <p className="text-xs text-faint mt-1">
           {hint ??
             (kind === "claim"
-              ? "PDF, DOCX, Excel, P6 XML, MS Project (MPP) and scanned site diaries (OCR)"
-              : "Contracts, sub-contracts, purchase orders and amendments — PDF, DOCX, Excel")}
+              ? "PDF, DOCX, Excel, P6 XML, MS Project (MPP), scanned site diaries (OCR) — or a ZIP/RAR/7z bundle, which is unpacked for you"
+              : "Contracts, sub-contracts, purchase orders and amendments — PDF, DOCX, Excel, or a ZIP/RAR/7z bundle")}
         </p>
       </div>
 
@@ -245,6 +245,15 @@ export function DocumentsPanel({
                     <p className="text-[11px] text-faint mt-1.5">Key dates: {d.analysis.key_dates.join(" · ")}</p>
                   )}
                 </div>
+              )}
+
+              {/* A ZIP is never stored as one file — the server unpacks it and
+                  stores each document inside, which is what the list below shows. */}
+              {d.type === "ZIP" && onUploaded && (
+                <p className="mt-2 flex items-center gap-1.5 text-xs text-muted">
+                  <FileArchive className="size-3.5" /> Bundle unpacked — the documents inside were uploaded
+                  individually and appear in the list below.
+                </p>
               )}
 
               {analysing && (

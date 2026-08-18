@@ -1,10 +1,11 @@
 import { useState } from "react";
 import { Link, useLocation } from "react-router-dom";
-import { AlertCircle, ChevronDown, ChevronRight, Download, Eye, FileText, Loader2, Sparkles, Trash2 } from "lucide-react";
+import { AlertCircle, Archive, ChevronDown, ChevronRight, Download, Eye, FileArchive, FileText, Loader2, PackageOpen, Sparkles, Trash2 } from "lucide-react";
 import { Badge } from "@/components/ui/Badge";
+import { apiErrorMessage } from "@/api/client";
 import { formatDate } from "@/lib/utils";
 import { useHasPermission } from "@/hooks/usePermission";
-import { useAnalyzeProjectDoc, useDeleteProjectDoc } from "@/hooks/useProjectDocuments";
+import { useAnalyzeProjectDoc, useDeleteProjectDoc, useUnpackProjectDoc } from "@/hooks/useProjectDocuments";
 import { downloadProjectDocApi } from "@/api/projectDocuments";
 import type { UploadedClaimDocument } from "@/types";
 
@@ -24,6 +25,8 @@ export function UploadedDocsList({ docs }: { docs: UploadedClaimDocument[] }) {
   // AI analysis is a staff action (model cost) — only offered in the admin workspace.
   const projectId = docs[0]?.projectId ?? "";
   const analyze = useAnalyzeProjectDoc(projectId);
+  // Unpacking an archive that was uploaded before bundles were expanded on upload.
+  const unpack = useUnpackProjectDoc(projectId);
   // Analysis panels are collapsed by default so the list stays compact.
   const [open, setOpen] = useState<Record<string, boolean>>({});
   const toggle = (id: string) => setOpen((o) => ({ ...o, [id]: !o[id] }));
@@ -43,11 +46,16 @@ export function UploadedDocsList({ docs }: { docs: UploadedClaimDocument[] }) {
         const analysing = d.analysisStatus === "pending" || d.analysisStatus === "analyzing";
         const failed = d.analysisStatus === "failed";
         const expanded = !!open[d.id];
+        // An archive still sitting here whole — uploaded before bundles were
+        // unpacked on upload, or when the server couldn't read its format.
+        const isArchive = d.type === "ZIP";
+        const unpacked = d.status === "Unpacked";
+        const unpacking = unpack.isPending && unpack.variables === d.id;
         return (
           <li key={d.id} className="px-5 py-3">
             <div className="flex items-center gap-3">
               <span className="size-9 shrink-0 grid place-items-center rounded-lg bg-navy-50 text-navy-700">
-                <FileText className="size-4" />
+                {isArchive ? <FileArchive className="size-4" /> : <FileText className="size-4" />}
               </span>
               <div className="min-w-0 flex-1">
                 <p className="text-sm font-medium text-ink truncate">{d.name}</p>
@@ -56,7 +64,9 @@ export function UploadedDocsList({ docs }: { docs: UploadedClaimDocument[] }) {
                   {d.claimRef ? ` · ${d.claimRef}` : ""}
                 </p>
               </div>
-              {d.analysis && !analysing && (
+              {/* An archive's own "analysis" is guesswork from its filename — it has
+                  no readable text — so it is not offered here. */}
+              {d.analysis && !analysing && !isArchive && (
                 <button
                   type="button"
                   onClick={() => toggle(d.id)}
@@ -75,7 +85,15 @@ export function UploadedDocsList({ docs }: { docs: UploadedClaimDocument[] }) {
                   )}
                 </button>
               )}
-              {analysing ? (
+              {unpacking ? (
+                <Badge tone="warning">
+                  <Loader2 className="size-3 animate-spin" /> Unpacking…
+                </Badge>
+              ) : unpacked ? (
+                <Badge tone="neutral">Unpacked</Badge>
+              ) : isArchive ? (
+                <Badge tone="warning">Not unpacked</Badge>
+              ) : analysing ? (
                 <Badge tone="warning">
                   <Loader2 className="size-3 animate-spin" /> Analysing…
                 </Badge>
@@ -108,7 +126,23 @@ export function UploadedDocsList({ docs }: { docs: UploadedClaimDocument[] }) {
                   <Download className="size-4" />
                 </button>
               )}
-              {!isClient && d.driveFileId && (
+              {!isClient && isArchive && d.driveFileId && (
+                <button
+                  type="button"
+                  onClick={() => unpack.mutate(d.id)}
+                  disabled={unpacking}
+                  className="btn btn-ghost px-2 text-navy-700"
+                  aria-label={`Unpack ${d.name}`}
+                  title={
+                    unpacked
+                      ? "Unpack again — stores every file inside as a document"
+                      : "Unpack — stores every file inside as its own document, then analyses them"
+                  }
+                >
+                  {unpacking ? <Loader2 className="size-4 animate-spin" /> : <PackageOpen className="size-4" />}
+                </button>
+              )}
+              {!isClient && !isArchive && d.driveFileId && (
                 <button
                   type="button"
                   onClick={() => analyze.mutate(d.id)}
@@ -133,8 +167,27 @@ export function UploadedDocsList({ docs }: { docs: UploadedClaimDocument[] }) {
               )}
             </div>
 
+            {/* ── Archives: what happened to the bundle, and why ── */}
+            {isArchive && d.note && !unpacking && (
+              <p className="mt-2 ml-12 flex items-start gap-1.5 text-xs text-muted">
+                <Archive className="size-3.5 shrink-0 mt-px" /> {d.note}
+              </p>
+            )}
+            {isArchive && !d.note && !unpacked && !unpacking && (
+              <p className="mt-2 ml-12 flex items-start gap-1.5 text-xs text-muted">
+                <Archive className="size-3.5 shrink-0 mt-px" /> Uploaded as a bundle. Unpack it to store every
+                document inside and have them analysed.
+              </p>
+            )}
+            {isArchive && unpack.isError && unpack.variables === d.id && (
+              <p className="mt-2 ml-12 flex items-start gap-1.5 text-xs text-error">
+                <AlertCircle className="size-3.5 shrink-0 mt-px" />
+                {apiErrorMessage(unpack.error, "Could not unpack this archive.")}
+              </p>
+            )}
+
             {/* ── AI analysis: what this document is about (collapsible) ── */}
-            {d.analysis && expanded && (
+            {d.analysis && expanded && !isArchive && (
               <div className="mt-3 ml-12 rounded-lg border border-border bg-navy-50/40 p-3">
                 <div className="flex flex-wrap items-center gap-2 mb-1.5">
                   <span className="inline-flex items-center gap-1 text-xs font-semibold text-navy-700">
