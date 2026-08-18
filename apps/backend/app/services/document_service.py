@@ -159,6 +159,25 @@ def create_document(data: Dict) -> Dict:
         return d.to_dict()
 
 
+def mark_unpacked(document_id: str, member_count: int) -> Optional[Dict]:
+    """Flag an archive row whose contents were unpacked into documents of their own.
+
+    The archive itself is kept — deleting an uploaded file is the user's call, not
+    ours — but it is taken out of the analysis queue: an archive has no text to
+    read, so any classification of it would be guesswork off the filename.
+    """
+    with SessionLocal() as db:
+        d = db.get(Document, document_id)
+        if not d:
+            return None
+        d.status = "Unpacked"
+        d.note = f"Unpacked into {member_count} document(s) — safe to delete this archive."
+        d.analysisStatus = "done"
+        d.analysisError = None
+        db.commit()
+        return d.to_dict()
+
+
 def set_analysis(document_id: str, analysis: Dict) -> Optional[Dict]:
     """Store the cached AI analysis for a document and mark it done."""
     with SessionLocal() as db:

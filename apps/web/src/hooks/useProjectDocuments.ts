@@ -8,6 +8,7 @@ import {
   deleteProjectDocApi,
   listDocCommentsApi,
   listProjectDocsApi,
+  unpackProjectDocApi,
   updateDocCommentApi,
   uploadProjectDocApi,
   type UploadArgs,
@@ -48,6 +49,15 @@ export function useAnalyzeProjectDoc(projectId: string) {
   return useMutation({
     mutationFn: (documentId: string) => analyzeProjectDocApi(documentId),
     onSuccess: () => qc.invalidateQueries({ queryKey: projectDocsKey(projectId) }),
+  });
+}
+
+/** Unpack an already-uploaded archive row into the documents it contains. */
+export function useUnpackProjectDoc(projectId: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (documentId: string) => unpackProjectDocApi(documentId),
+    onSuccess: (docs) => qc.setQueryData(projectDocsKey(projectId), docs),
   });
 }
 

@@ -1,4 +1,5 @@
 import asyncio
+import logging
 import os
 from contextlib import asynccontextmanager
 
@@ -13,6 +14,9 @@ from app.services.document_service import list_unfinished_analysis_ids
 from app.services.document_analysis import run_many
 from app.services.contract_book_service import list_unfinished_book_ids
 from app.services.book_clause_extraction import run_many as run_many_books
+from app.services.archive_extract import unpack_status
+
+log = logging.getLogger("uvicorn.error")
 
 
 @asynccontextmanager
@@ -21,6 +25,15 @@ async def lifespan(_app: FastAPI):
     init_db()
     seed_users()
     ensure_tokens()  # give any pre-existing client an upload-link token
+
+    # ZIP/TAR bundles are unpacked in-process, but RAR and 7z need an external
+    # tool. Log what this host has so a deployment missing one is obvious here
+    # rather than in a failed upload.
+    found = [name for name, path in unpack_status() if path]
+    log.info(
+        "Archive unpackers available: %s (ZIP and TAR are always supported)",
+        ", ".join(found) if found else "none — RAR/7z bundles cannot be unpacked",
+    )
 
     # Resume any document analyses that a previous run left unfinished, so they
     # don't sit "pending" forever. Runs in the background (semaphore-bounded).

@@ -57,6 +57,19 @@ export async function analyzeProjectDocApi(documentId: string): Promise<Uploaded
   return data;
 }
 
+/**
+ * Unpack an archive that is already stored as a single row into one document per
+ * file inside it — for bundles uploaded before unpacking existed, so a 130 MB
+ * archive doesn't have to be uploaded again. Returns the project's documents.
+ * Allow plenty of time: a large bundle takes a while to unpack and store.
+ */
+export async function unpackProjectDocApi(documentId: string): Promise<UploadedClaimDocument[]> {
+  const { data } = await api.post(`/project-documents/${documentId}/unpack`, undefined, {
+    timeout: 900_000,
+  });
+  return data;
+}
+
 /** Queue analysis for every not-yet-analysed document in a project (bulk). */
 export async function analyzePendingProjectDocsApi(projectId: string): Promise<UploadedClaimDocument[]> {
   const { data } = await api.post(`/project-documents/project/${projectId}/analyze-pending`);
